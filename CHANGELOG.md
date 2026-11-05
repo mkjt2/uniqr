@@ -6,6 +6,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-05
+
 ### Changed
 - The binary is 352 KB on macOS arm64, down from 1.3 MB, and max RSS is 1.84 MiB,
   down from 2.03 MiB. The only runtime dependencies are now `libc` and `memchr`.
