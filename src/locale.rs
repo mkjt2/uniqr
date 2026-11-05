@@ -16,13 +16,15 @@
 //!   macOS ships (checked by `tests/collation.rs`); it does not hold for some
 //!   single-byte and legacy multibyte locales, which always ask wcscoll.
 //!
+//! Even setlocale is deferred while lines are ASCII: see [`Lazy`].
+//!
 //! Everything else goes to libc's wcscoll on wide strings built exactly as
 //! uniq.c builds them. Lines that fail to decode are compared as raw bytes,
 //! ignoring -f/-s/-i, when both fail, and differ when only one fails
 //! (uniq.c's inlcmp fallback).
 
 use crate::engine::Comparator;
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::ffi::{CStr, c_char, c_int};
 
 #[allow(non_camel_case_types)]
@@ -69,6 +71,14 @@ pub struct Locale {
     pub charset: Charset,
     /// wcscoll can call different strings equal (a real LC_COLLATE table).
     pub collates: bool,
+    /// Different all-ASCII wide strings never collate equal: LC_COLLATE is
+    /// C/POSIX or a UTF-8 locale (see the module docs).
+    pub ascii_distinct: bool,
+}
+
+/// LC_COLLATE names whose tables keep every ASCII string distinct.
+fn ascii_distinct_collation(name: &str) -> bool {
+    name == "C" || name == "POSIX" || name.to_ascii_lowercase().ends_with(".utf-8")
 }
 
 /// How the current locale encodes characters.
@@ -159,6 +169,7 @@ pub fn detect() -> Locale {
             .to_string_lossy()
             .into_owned();
         let collates = collation_table_loads(&collate_name);
+        let ascii_distinct = ascii_distinct_collation(&collate_name);
         let codeset = CStr::from_ptr(libc::nl_langinfo(libc::CODESET));
         let charset = if codeset.to_bytes().eq_ignore_ascii_case(b"UTF-8") {
             Charset::Utf8(Box::new(Ascii::from_libc()))
@@ -167,7 +178,11 @@ pub fn detect() -> Locale {
         } else {
             Charset::Wide
         };
-        Locale { charset, collates }
+        Locale {
+            charset,
+            collates,
+            ascii_distinct,
+        }
     }
 }
 
@@ -277,15 +292,18 @@ pub struct Utf8Keys {
     spec: KeySpec,
     ascii: Box<Ascii>,
     collates: bool,
+    ascii_distinct: bool,
     scratch: Scratch,
 }
 
 impl Utf8Keys {
-    pub fn new(spec: KeySpec, ascii: Box<Ascii>, collates: bool) -> Utf8Keys {
+    /// `collates`/`ascii_distinct` as in [`Locale`].
+    pub fn new(spec: KeySpec, ascii: Box<Ascii>, collates: bool, ascii_distinct: bool) -> Utf8Keys {
         Utf8Keys {
             spec,
             ascii,
             collates,
+            ascii_distinct,
             scratch: RefCell::default(),
         }
     }
@@ -322,7 +340,7 @@ impl Utf8Keys {
 
     /// Different (after folding) valid keys: equal only if wcscoll says so.
     fn collate_eq(&self, a: &[u8], b: &[u8]) -> bool {
-        let ascii_ok = !self.spec.fold || self.ascii.lower_stays_ascii;
+        let ascii_ok = self.ascii_distinct && (!self.spec.fold || self.ascii.lower_stays_ascii);
         if !self.collates || (ascii_ok && a.is_ascii() && b.is_ascii()) {
             return false;
         }
@@ -536,6 +554,120 @@ impl Comparator for WideKeys {
     }
 }
 
+/// The locale-backed comparator a [`Lazy`] switches to once it needs one.
+enum Full {
+    Utf8(Utf8Keys),
+    Single(SingleByteKeys),
+    Wide(WideKeys),
+}
+
+impl Full {
+    fn analyze(&self, line: &[u8]) -> Key {
+        match self {
+            Full::Utf8(k) => k.analyze(line),
+            Full::Single(k) => k.analyze(line),
+            Full::Wide(_) => Key::default(),
+        }
+    }
+
+    fn equal(&self, a: &[u8], ai: Key, b: &[u8], bi: Key) -> bool {
+        match self {
+            Full::Utf8(k) => k.equal(a, ai, b, bi),
+            Full::Single(k) => k.equal(a, ai, b, bi),
+            Full::Wide(k) => k.equal(a, (), b, ()),
+        }
+    }
+
+    /// Equality of two lines analyzed from scratch.
+    fn line_eq(&self, a: &[u8], b: &[u8]) -> bool {
+        let (ai, bi) = (self.analyze(a), self.analyze(b));
+        self.equal(a, ai, b, bi)
+    }
+}
+
+/// Comparison with locale setup deferred until a non-ASCII line needs it.
+///
+/// setlocale and its tables cost the process ~140 KB, and for ASCII lines
+/// they cannot change the answer when the LC_CTYPE and LC_COLLATE names
+/// resolve (LC_ALL, then the category, then LANG, ignoring empty values) to
+/// C, POSIX or a `*.UTF-8` locale. Either such a locale exists, and then
+/// ASCII characters fold, count as blanks and collate exactly as in C
+/// (re-verified for every shipped locale by `tests/collation.rs`), or it does
+/// not, and setlocale falls back to C. So ASCII keys are handled here with C
+/// rules; the first non-ASCII line sets the locale up.
+pub struct Lazy {
+    spec: KeySpec,
+    ascii: Ascii,
+    full: OnceCell<Full>,
+}
+
+impl Lazy {
+    /// `None` when the locale names do not allow deferring setlocale.
+    pub fn new(spec: KeySpec, env: &dyn Fn(&str) -> Option<String>) -> Option<Lazy> {
+        let resolve = |category: &str| {
+            ["LC_ALL", category, "LANG"]
+                .iter()
+                .find_map(|k| env(k).filter(|v| !v.is_empty()))
+                .unwrap_or_else(|| "C".into())
+        };
+        let safe = ascii_distinct_collation(&resolve("LC_CTYPE"))
+            && ascii_distinct_collation(&resolve("LC_COLLATE"));
+        safe.then(|| Lazy {
+            spec,
+            ascii: Ascii::posix(),
+            full: OnceCell::new(),
+        })
+    }
+
+    fn full(&self) -> &Full {
+        self.full.get_or_init(|| {
+            let loc = detect();
+            let spec = self.spec;
+            match loc.charset {
+                Charset::Utf8(a) => {
+                    Full::Utf8(Utf8Keys::new(spec, a, loc.collates, loc.ascii_distinct))
+                }
+                Charset::Single(t) => Full::Single(SingleByteKeys::new(spec, t, loc.collates)),
+                Charset::Wide => Full::Wide(WideKeys::new(spec, loc.collates)),
+            }
+        })
+    }
+}
+
+impl Comparator for Lazy {
+    type Info = Key;
+
+    #[inline]
+    fn analyze(&self, line: &[u8]) -> Key {
+        if self.spec.is_plain() {
+            return Key::default();
+        }
+        if !line.is_ascii() {
+            return self.full().analyze(line);
+        }
+        let blank = &self.ascii.blank;
+        let start = skip(line.len(), &self.spec, |i| (blank[usize::from(line[i])], 1));
+        Key { valid: true, start }
+    }
+
+    #[inline]
+    fn equal(&self, a: &[u8], ai: Key, b: &[u8], bi: Key) -> bool {
+        let ascii = a.is_ascii() && b.is_ascii();
+        if self.spec.is_plain() {
+            return a == b || (!ascii && self.full().line_eq(a, b));
+        }
+        if !ascii {
+            return self.full().equal(a, ai, b, bi);
+        }
+        let (a, b) = (&a[ai.start..], &b[bi.start..]);
+        if self.spec.fold {
+            a.eq_ignore_ascii_case(b)
+        } else {
+            a == b
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -567,6 +699,44 @@ mod tests {
     }
 
     #[test]
+    fn deferral_depends_on_locale_names() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |k: &str| {
+                pairs
+                    .iter()
+                    .find(|(n, _)| *n == k)
+                    .map(|(_, v)| v.to_string())
+            }
+        };
+        let lazy = |pairs| Lazy::new(KeySpec::default(), &env(pairs)).is_some();
+        assert!(lazy(&[]));
+        assert!(lazy(&[("LANG", "en_US.UTF-8")]));
+        assert!(lazy(&[("LC_ALL", "POSIX"), ("LANG", "ja_JP.SJIS")]));
+        assert!(!lazy(&[("LC_ALL", ""), ("LANG", "ja_JP.SJIS")]));
+        assert!(!lazy(&[("LC_COLLATE", "kk_KZ.PT154")]));
+        assert!(!lazy(&[("LC_CTYPE", "en_US.ISO8859-1")]));
+    }
+
+    #[test]
+    fn ascii_lines_never_set_the_locale_up() {
+        let spec = KeySpec {
+            fields: 1,
+            chars: 1,
+            fold: true,
+        };
+        let lazy = Lazy::new(spec, &|_| None).unwrap();
+        let (a, b) = (b"1 xAb".as_slice(), b"22 XaB".as_slice());
+        let (ai, bi) = (lazy.analyze(a), lazy.analyze(b));
+        assert!(lazy.equal(a, ai, b, bi));
+        let c = b"3 xAc".as_slice();
+        assert!(!lazy.equal(a, ai, c, lazy.analyze(c)));
+        let plain = Lazy::new(KeySpec::default(), &|_| None).unwrap();
+        let k = Key::default();
+        assert!(plain.equal(b"x", k, b"x", k) && !plain.equal(b"x", k, b"y", k));
+        assert!(lazy.full.get().is_none() && plain.full.get().is_none());
+    }
+
+    #[test]
     fn utf8_decoding() {
         let s = "aé€😀".as_bytes();
         assert_eq!(utf8_at(s, 0), ('a' as u32, 1));
@@ -576,7 +746,7 @@ mod tests {
     }
 
     fn utf8(spec: KeySpec) -> Utf8Keys {
-        Utf8Keys::new(spec, Box::new(Ascii::posix()), false)
+        Utf8Keys::new(spec, Box::new(Ascii::posix()), false, true)
     }
 
     #[test]

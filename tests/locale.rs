@@ -129,3 +129,77 @@ fn ascii_options_without_locale() {
         "   2 x AB\n   1 z abc\n"
     );
 }
+
+/// Plain mode defers setlocale until it meets a non-ASCII mismatch, and only
+/// when the locale names make that safe. These pin the edge cases of that
+/// laziness against the original (macOS values).
+#[cfg(target_os = "macos")]
+#[test]
+fn lazy_locale_setup_in_plain_mode() {
+    let run = |env: &[(&str, &str)], stdin: &[u8]| {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = common::cmd(dir.path());
+        for k in ["LC_ALL", "LC_CTYPE", "LC_COLLATE", "LANG"] {
+            c.env_remove(k);
+        }
+        for (k, v) in env {
+            c.env(k, v);
+        }
+        c.arg("-c")
+            .write_stdin(stdin.to_vec())
+            .output()
+            .unwrap()
+            .stdout
+    };
+    // ASCII first, then a collation-equal non-ASCII pair: setup happens late.
+    assert_eq!(
+        run(&[("LANG", "en_US.UTF-8")], "a\nb\nж\nя\n".as_bytes()),
+        "   1 a\n   1 b\n   2 ж\n".as_bytes()
+    );
+    // Empty LC_ALL is ignored; LC_COLLATE from a non-UTF-8 locale disables
+    // the shortcut (PT154 ignores \x01 even in ASCII lines).
+    assert_eq!(
+        run(&[("LC_ALL", ""), ("LANG", "kk_KZ.PT154")], b"a\x01b\nab\n"),
+        b"   2 a\x01b\n"
+    );
+    assert_eq!(
+        run(
+            &[("LC_CTYPE", "en_US.UTF-8"), ("LC_COLLATE", "kk_KZ.PT154")],
+            b"a\x01b\nab\n"
+        ),
+        b"   2 a\x01b\n"
+    );
+    // SJIS through LC_CTYPE alone also disables it.
+    assert_eq!(
+        run(
+            &[("LC_CTYPE", "ja_JP.SJIS"), ("LC_COLLATE", "ja_JP.SJIS")],
+            b"a\\b\nab\n"
+        ),
+        b"   2 a\\b\n"
+    );
+    // A UTF-8 name that does not exist falls back to C: bytes.
+    assert_eq!(
+        run(&[("LANG", "xx_YY.UTF-8")], "ж\nя\n".as_bytes()),
+        "   1 ж\n   1 я\n".as_bytes()
+    );
+}
+
+/// LC_COLLATE, not LC_CTYPE, decides whether ASCII can collate equal: the
+/// key path (-f/-s/-i) must ask wcscoll here (macOS values).
+#[cfg(target_os = "macos")]
+#[test]
+fn utf8_ctype_with_single_byte_collation() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut c = common::cmd(dir.path());
+    for k in ["LC_ALL", "LANG"] {
+        c.env_remove(k);
+    }
+    let out = c
+        .env("LC_CTYPE", "en_US.UTF-8")
+        .env("LC_COLLATE", "kk_KZ.PT154")
+        .args(["-f1", "-c"])
+        .write_stdin("1 a\u{1}b\n2 ab\n")
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "   2 1 a\u{1}b\n");
+}

@@ -11,8 +11,6 @@ pub mod getopt;
 pub mod locale;
 pub mod logging;
 
-use clap::FromArgMatches;
-use cli::Cli;
 use cli::ColorWhen;
 use ctx::{Ctx, Terminal};
 use error::{AppError, JsonError};
@@ -45,9 +43,15 @@ pub fn run(args: Vec<OsString>, io: Io) -> i32 {
     if let Some(argv0) = args.first() {
         error::set_progname(argv0);
     }
-    // BSD getopt_long semantics first; clap then sees a canonical argv.
-    let args = match getopt::normalize(&args, (io.env)("POSIXLY_CORRECT").is_some()) {
-        Ok(args) => args,
+    // BSD getopt_long semantics; clap only renders --help and --version.
+    let cli = match getopt::parse(&args, (io.env)("POSIXLY_CORRECT").is_some()) {
+        Ok(getopt::Parsed::Run(cli)) => cli,
+        Ok(getopt::Parsed::Help) => {
+            return show_help_or_version(&args[0], "--help", json, no_color, io);
+        }
+        Ok(getopt::Parsed::Version) => {
+            return show_help_or_version(&args[0], "--version", json, no_color, io);
+        }
         Err(getopt::ArgError::Usage(m)) => {
             return finish(Err(AppError::BsdUsage(m)), false, false, io.err);
         }
@@ -55,20 +59,14 @@ pub fn run(args: Vec<OsString>, io: Io) -> i32 {
             return finish(Err(AppError::Other(m)), false, false, io.err);
         }
     };
-
-    let matches = match cli::command().try_get_matches_from(args) {
-        Ok(m) => m,
-        Err(e) => return clap_error(e, json, no_color, io),
-    };
-    let cli = match Cli::from_arg_matches(&matches) {
-        Ok(cli) => cli,
-        Err(e) => return clap_error(e, json, no_color, io),
-    };
     let settings = cli.global.settings();
 
     let color_choice = settings.color.unwrap_or(ColorWhen::Auto);
     let color = ctx::decide_color(color_choice, no_color, io.term.stderr_tty);
-    logging::init(settings.verbose, settings.quiet, color);
+    // Nothing is logged at the default level; skip the subscriber's setup cost.
+    if (io.env)("RUST_LOG").is_some() {
+        logging::init(settings.verbose, settings.quiet, color);
+    }
 
     let mut ctx = Ctx {
         out: io.out,
@@ -79,6 +77,14 @@ pub fn run(args: Vec<OsString>, io: Io) -> i32 {
     };
     let result = commands::root::run(&mut ctx, &cli);
     finish(result, ctx.json, ctx.color, ctx.err)
+}
+
+/// Let clap render --help or --version (the only things it still parses).
+fn show_help_or_version(argv0: &OsString, flag: &str, json: bool, no_color: bool, io: Io) -> i32 {
+    match cli::command().try_get_matches_from([argv0.clone(), flag.into()]) {
+        Err(e) => clap_error(e, json, no_color, io),
+        Ok(_) => 0,
+    }
 }
 
 /// Map a command result to an exit code, reporting errors on stderr.

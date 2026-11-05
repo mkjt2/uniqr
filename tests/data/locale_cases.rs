@@ -381,6 +381,15 @@ pub const CASES: &[Case] = &[
         false,
     ),
     (
+        "collate-fold-after-skip-ascii",
+        "en_US.UTF-8",
+        &["-i", "-f1", "-c"],
+        b"1 Ab\n2 aB\n3 ac\n",
+        b"   2 1 Ab\n   1 3 ac\n",
+        0,
+        true,
+    ),
+    (
         "collate-invalid-utf8-plain",
         "en_US.UTF-8",
         &["-c"],

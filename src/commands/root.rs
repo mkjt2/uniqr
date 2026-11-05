@@ -5,7 +5,7 @@ use crate::cli::{Cli, Septype};
 use crate::ctx::Ctx;
 use crate::engine::{self, AllRepeated, Bytes, Failure, Mode};
 use crate::error::{AppError, errno_message};
-use crate::locale::{self, Charset, KeySpec, SingleByteKeys, Utf8Keys, WideKeys};
+use crate::locale::{self, Charset, KeySpec, Lazy, SingleByteKeys, Utf8Keys, WideKeys};
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -51,15 +51,18 @@ pub fn run(ctx: &mut Ctx, cli: &Cli) -> Result<(), AppError> {
         chars: u64::from(cli.skip_chars.unwrap_or(0)),
         fold: cli.ignore_case,
     };
-    // setlocale(LC_ALL, ""), as the original does.
-    let loc = locale::detect();
-    let result = if spec.is_plain() && !loc.collates {
-        // wcscoll is wcscmp: equality is byte equality in every encoding.
-        engine::run(&Bytes, mode, input, out)
+    let env = |k: &str| std::env::var(k).ok();
+    let result = if let Some(lazy) = Lazy::new(spec, &env) {
+        // setlocale(LC_ALL, "") happens on the first non-ASCII line, if any.
+        engine::run(&lazy, mode, input, out)
     } else {
+        // setlocale(LC_ALL, ""), as the original does.
+        let loc = locale::detect();
         match loc.charset {
+            _ if spec.is_plain() && !loc.collates => engine::run(&Bytes, mode, input, out),
             Charset::Utf8(a) => {
-                engine::run(&Utf8Keys::new(spec, a, loc.collates), mode, input, out)
+                let keys = Utf8Keys::new(spec, a, loc.collates, loc.ascii_distinct);
+                engine::run(&keys, mode, input, out)
             }
             Charset::Single(t) => engine::run(
                 &SingleByteKeys::new(spec, t, loc.collates),

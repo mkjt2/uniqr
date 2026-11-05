@@ -66,6 +66,7 @@ CASES = [
     ("collate-latin1-plain", "en_US.ISO8859-1", ["-c"], b"\xc9\n\xe9\n\xff\n\xfe\n", False),
     ("collate-single-byte-ascii-collision", "kk_KZ.PT154", ["-c"], b"a\x01b\nab\n", False),
     ("collate-sjis-ascii-ignorable", "ja_JP.SJIS", ["-c"], b"a\\b\nab\na~b\n", False),
+    ("collate-fold-after-skip-ascii", U8, ["-i", "-f1", "-c"], b"1 Ab\n2 aB\n3 ac\n", True),
     ("collate-invalid-utf8-plain", U8, ["-c"], b"\xffa\n\xffb\n" + "ж\n".encode() + b"\xffa\n", True),
     # Locale selection.
     ("c-utf8-locale", "C.UTF-8", ["-ic"], "É\né\n".encode(), True),

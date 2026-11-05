@@ -61,11 +61,18 @@ trailing newline. The key is decoded in the current locale (setlocale(LC_ALL, ""
 libc, so an invalid locale name falls back to C exactly like the original); -f skips \
 fields (runs of blanks then non-blanks, iswblank), -s skips characters, -i applies \
 towlower. If both lines fail to decode they are compared as raw bytes ignoring -f/-s/-i; \
-if only one fails they differ. Equality is exact (wcscmp), as macOS wcscoll is in \
-multibyte locales; collation equivalence in single-byte locales is not emulated.
-- Case folding and blank classes come from libc (towlower/iswblank), so on macOS they \
-match the original exactly; Linux (static musl) uses musl's Unicode tables, which can \
-differ for a few characters, and only knows the C and UTF-8 encodings.
+if only one fails they differ. Lines are equal when wcscoll(3) says so, as in the \
+original. On macOS that is not byte equality: characters the LC_COLLATE table does not \
+define are ignored (en_US.UTF-8: `ж` equals `я`, `aж` equals `a`, even without -i). \
+runiq asks libc's wcscoll whenever the answer could differ from byte equality and only \
+skips it when it provably cannot (identical keys; C/POSIX collation; two different \
+all-ASCII keys under a UTF-8 or C collation, which tests/collation.rs re-verifies \
+against every UTF-8 locale the system ships). Without -f/-s/-i, setlocale itself is \
+deferred until a non-ASCII mismatch needs it (saves ~140 KB for ASCII input).
+- Case folding, blank classes and collation come from libc, so on macOS they match the \
+original exactly. Linux (static musl) has musl's Unicode tables and no collation \
+(wcscoll is wcscmp), and only knows the C and UTF-8 encodings, so non-ASCII results \
+there can differ from macOS (e.g. `ж`/`я` stay distinct).
 - SIGPIPE disposition is inherited, not reset by the Rust runtime: by default the process \
 dies quietly on a closed pipe, like the original; if the caller ignores SIGPIPE, the write \
 error is reported as `<progname>: stdout: Broken pipe` (or the OUTPUT name) with exit 1. \
@@ -79,7 +86,12 @@ uniq/tests/uniq_test.sh (FreeBSD's, Klara 2024) is vendored verbatim in tests/up
 and run by tests/upstream.rs through a small ATF shim, against both /usr/bin/uniq (to \
 validate the shim, macOS only) and runiq (invoked through a symlink named uniq).
 - Performance target: at least as fast as the original and no more memory (peak footprint) \
-on large inputs; streaming with constant memory (one buffer plus the previous line)."""
+on large inputs; streaming with constant memory: a 16 KiB input buffer (grown only for a \
+longer line), an 8 KiB output buffer and a copy of the previous line.
+- Verification: the [[case]]s here, tests/data/locale_cases.rs (byte-exact cases \
+recorded from /usr/bin/uniq that TOML cannot hold: invalid UTF-8, legacy encodings, \
+macOS-only collation), the vendored upstream suite, and scripts/fuzz.py (differential \
+fuzzing of stdout, stderr, exit status and output files against /usr/bin/uniq)."""
 help_flags = ["--help"]
 version_flags = ["--version"]
 error_style = "plain"

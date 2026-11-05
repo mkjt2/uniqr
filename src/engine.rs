@@ -13,9 +13,9 @@
 use std::io::{self, Read, Write};
 
 /// Initial input buffer size. It grows (doubling) only for lines longer than it.
-const READ_CHUNK: usize = 64 * 1024;
+const READ_CHUNK: usize = 16 * 1024;
 /// Output is handed to the writer once this much is pending.
-const OUT_CHUNK: usize = 32 * 1024;
+const OUT_CHUNK: usize = 8 * 1024;
 
 /// `-D` separator style.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,6 +90,14 @@ pub enum Failure {
     Write(io::Error),
 }
 
+/// A line: a range of the input buffer, or the saved copy of the previous
+/// line (made when a refill would otherwise have to keep it in the buffer).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Line {
+    Buf(usize, usize),
+    Saved,
+}
+
 struct Engine<'a, C: Comparator> {
     cmp: &'a C,
     mode: Mode,
@@ -106,6 +114,8 @@ struct Engine<'a, C: Comparator> {
     seen_nul: bool,
     pending: Vec<u8>,
     repeats: i64,
+    saved: Vec<u8>,
+    inspect: &'a mut dyn FnMut(usize),
 }
 
 /// Run uniq over `input`, writing to `out`.
@@ -114,6 +124,17 @@ pub fn run<C: Comparator>(
     mode: Mode,
     input: &mut dyn Read,
     out: &mut dyn Write,
+) -> Result<(), Failure> {
+    run_inspect(cmp, mode, input, out, |_| {})
+}
+
+/// [`run`], reporting the input buffer's size after every refill (tests).
+fn run_inspect<C: Comparator>(
+    cmp: &C,
+    mode: Mode,
+    input: &mut dyn Read,
+    out: &mut dyn Write,
+    mut inspect: impl FnMut(usize),
 ) -> Result<(), Failure> {
     let mut e = Engine {
         cmp,
@@ -128,6 +149,8 @@ pub fn run<C: Comparator>(
         seen_nul: false,
         pending: Vec::with_capacity(OUT_CHUNK + 64),
         repeats: 0,
+        saved: Vec::new(),
+        inspect: &mut inspect,
     };
     e.run()?;
     e.flush_pending()?;
@@ -184,10 +207,18 @@ impl<C: Comparator> Engine<'_, C> {
         Ok(())
     }
 
+    #[inline]
+    fn bytes(&self, line: Line) -> &[u8] {
+        match line {
+            Line::Buf(s, e) => &self.buf[s..e],
+            Line::Saved => &self.saved,
+        }
+    }
+
     /// The line as the original's C code sees it: up to the first NUL.
     #[inline]
-    fn cstr(&self, (s, e): (usize, usize)) -> &[u8] {
-        let line = &self.buf[s..e];
+    fn cstr(&self, line: Line) -> &[u8] {
+        let line = self.bytes(line);
         if self.seen_nul
             && let Some(i) = memchr::memchr(0, line)
         {
@@ -198,8 +229,8 @@ impl<C: Comparator> Engine<'_, C> {
 
     /// The comparison key: the C string without its trailing newline.
     #[inline]
-    fn key(&self, range: (usize, usize)) -> &[u8] {
-        let line = self.cstr(range);
+    fn key(&self, line: Line) -> &[u8] {
+        let line = self.cstr(line);
         match line.split_last() {
             Some((b'\n', rest)) => rest,
             _ => line,
@@ -207,13 +238,16 @@ impl<C: Comparator> Engine<'_, C> {
     }
 
     /// `show()` in uniq.c: optional `%4lld ` count, then the line as a C string.
-    fn show(&mut self, range: (usize, usize)) -> Result<(), Failure> {
+    fn show(&mut self, line: Line) -> Result<(), Failure> {
         if self.mode.count {
             write_count(&mut self.pending, self.repeats + 1);
         }
-        let s = range.0;
-        let len = self.cstr(range).len();
-        self.pending.extend_from_slice(&self.buf[s..s + len]);
+        let len = self.cstr(line).len();
+        let text = match line {
+            Line::Buf(s, _) => &self.buf[s..s + len],
+            Line::Saved => &self.saved[..len],
+        };
+        self.pending.extend_from_slice(text);
         if self.pending.len() >= OUT_CHUNK {
             self.flush_pending()?;
         }
@@ -228,54 +262,54 @@ impl<C: Comparator> Engine<'_, C> {
         Ok(())
     }
 
-    /// The next line as a `buf` range (newline included when present). `keep`
-    /// is the previous line, which must survive a refill; it is moved with the
-    /// buffer contents and updated in place.
-    fn next_line(
-        &mut self,
-        mut keep: Option<&mut (usize, usize)>,
-    ) -> Result<Option<(usize, usize)>, Failure> {
+    /// The next line (newline included when present). `keep` is the previous
+    /// line, which must survive a refill: it is copied aside (once) so the
+    /// buffer only ever holds the line being read.
+    fn next_line(&mut self, mut keep: Option<&mut Line>) -> Result<Option<Line>, Failure> {
         loop {
             if let Some(i) = memchr::memchr(b'\n', &self.buf[self.scanned..self.end]) {
-                let line = (self.pos, self.scanned + i + 1);
-                self.pos = line.1;
-                self.scanned = line.1;
+                let line = Line::Buf(self.pos, self.scanned + i + 1);
+                self.pos = self.scanned + i + 1;
+                self.scanned = self.pos;
                 return Ok(Some(line));
             }
             self.scanned = self.end;
             if self.eof {
                 if self.pos < self.end {
-                    let line = (self.pos, self.end);
+                    let line = Line::Buf(self.pos, self.end);
                     self.pos = self.end;
                     return Ok(Some(line));
                 }
                 return Ok(None);
             }
-            self.refill(keep.as_deref_mut())?;
+            if let Some(k) = keep.as_deref_mut()
+                && let Line::Buf(s, e) = *k
+            {
+                self.saved.clear();
+                self.saved.extend_from_slice(&self.buf[s..e]);
+                *k = Line::Saved;
+            }
+            self.refill()?;
         }
     }
 
-    fn refill(&mut self, keep: Option<&mut (usize, usize)>) -> Result<(), Failure> {
+    fn refill(&mut self) -> Result<(), Failure> {
         // Output goes out before we (possibly) block waiting for input.
         if !self.pending.is_empty() {
             self.flush_pending()?;
             self.out.flush().map_err(Failure::Write)?;
         }
-        let from = keep.as_ref().map_or(self.pos, |k| k.0);
-        if from > 0 {
-            self.buf.copy_within(from..self.end, 0);
-            self.end -= from;
-            self.pos -= from;
-            self.scanned -= from;
-            if let Some(k) = keep {
-                k.0 -= from;
-                k.1 -= from;
-            }
+        if self.pos > 0 {
+            self.buf.copy_within(self.pos..self.end, 0);
+            self.end -= self.pos;
+            self.scanned -= self.pos;
+            self.pos = 0;
         }
         if self.end == self.buf.len() {
             let len = self.buf.len();
             self.buf.resize(len * 2, 0);
         }
+        (self.inspect)(self.buf.len());
         loop {
             match self.input.read(&mut self.buf[self.end..]) {
                 Ok(0) => {
@@ -342,6 +376,41 @@ mod tests {
             write_count(&mut out, n);
             assert_eq!(String::from_utf8(out).unwrap(), want);
         }
+    }
+
+    /// Endless identical lines, counted by how much was read.
+    struct Same(usize);
+
+    impl Read for Same {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.0 == 0 {
+                return Ok(0);
+            }
+            let line = b"the same line\n";
+            let n = (buf.len() / line.len()).min(self.0);
+            for chunk in buf.chunks_exact_mut(line.len()).take(n) {
+                chunk.copy_from_slice(line);
+            }
+            self.0 -= n;
+            Ok(n * line.len())
+        }
+    }
+
+    #[test]
+    fn memory_stays_bounded_while_a_group_never_ends() {
+        let mut out = Vec::new();
+        let mode = Mode::new(true, false, false, None);
+        let mut input = Same(2_000_000);
+        let mut engine_buf_len = 0;
+        run_inspect(&Bytes, mode, &mut input, &mut out, |len| {
+            engine_buf_len = engine_buf_len.max(len)
+        })
+        .unwrap();
+        assert_eq!(out, b"2000000 the same line\n");
+        assert!(
+            engine_buf_len <= 2 * READ_CHUNK,
+            "buffer grew to {engine_buf_len}"
+        );
     }
 
     #[test]

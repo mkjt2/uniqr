@@ -1,6 +1,6 @@
-//! Guards the one collation shortcut runiq takes without asking wcscoll:
-//! in a UTF-8 locale, two different all-ASCII keys never collate equal.
-//! (src/locale.rs relies on it.) This probes libc directly in every UTF-8
+//! Guards the assumptions src/locale.rs takes without asking libc:
+//! in a UTF-8 locale, two different all-ASCII keys never collate equal, and
+//! ASCII characters fold and classify as blanks exactly as in the C locale. This probes libc directly in every UTF-8
 //! locale the system ships, with near-miss pairs (substitution, insertion,
 //! deletion, transposition) over all of ASCII, so an OS update that breaks
 //! the assumption fails here instead of silently changing output.
@@ -86,4 +86,59 @@ fn ascii_never_collides_in_utf8_locales() {
         }
     }
     assert!(collisions.is_empty(), "{}", collisions.join("\n"));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn ascii_ctype_is_the_same_in_every_utf8_locale() {
+    use std::process::Command;
+    // Run in a child so setlocale here cannot race the other test's.
+    let probe = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "ascii_ctype_probe", "--nocapture", "--ignored"])
+        .output()
+        .unwrap();
+    assert!(
+        probe.status.success(),
+        "{}",
+        String::from_utf8_lossy(&probe.stdout)
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "run by ascii_ctype_is_the_same_in_every_utf8_locale"]
+fn ascii_ctype_probe() {
+    use std::ffi::CString;
+    unsafe extern "C" {
+        fn towlower(c: i32) -> i32;
+        fn iswblank(c: i32) -> i32;
+    }
+    let out = std::process::Command::new("locale")
+        .arg("-a")
+        .output()
+        .unwrap();
+    let mut names: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| l.ends_with(".UTF-8"))
+        .map(str::to_string)
+        .collect();
+    names.extend(["C".into(), "POSIX".into()]);
+    let mut bad = Vec::new();
+    for name in &names {
+        let c = CString::new(name.as_str()).unwrap();
+        // SAFETY: this ignored test runs alone in its own process.
+        if unsafe { libc::setlocale(libc::LC_ALL, c.as_ptr()) }.is_null() {
+            continue;
+        }
+        for b in 0..128u8 {
+            let lower = i32::from(b.to_ascii_lowercase());
+            let blank = b == b' ' || b == b'\t';
+            // SAFETY: plain libc classification calls.
+            let (l, k) = unsafe { (towlower(i32::from(b)), iswblank(i32::from(b)) != 0) };
+            if l != lower || k != blank {
+                bad.push(format!("{name}: {b} lower={l} blank={k}"));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
 }

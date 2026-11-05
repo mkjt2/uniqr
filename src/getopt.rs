@@ -5,10 +5,20 @@
 //! clap cannot express that grammar (options stop at the first operand, `-D`
 //! takes a value only when attached, a `-` inside a cluster starts a long
 //! option, usage errors exit 1 with getopt's wording), so the arguments are
-//! parsed here first and handed to clap in a canonical form it always accepts.
+//! parsed here, straight into the clap-derived [`Cli`]; clap itself is only
+//! used to render --help and --version.
 
+use crate::cli::{Cli, GlobalArgs, Septype};
 use std::ffi::OsString;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+/// What the arguments ask for.
+#[derive(Debug)]
+pub enum Parsed {
+    Run(Box<Cli>),
+    Help,
+    Version,
+}
 
 /// Why the arguments were rejected.
 #[derive(Debug, PartialEq, Eq)]
@@ -56,14 +66,13 @@ struct Opts {
     repeated: bool,
     ignore_case: bool,
     unique: bool,
-    all: Option<&'static str>,
-    fields: Option<i64>,
-    chars: Option<i64>,
+    all: Option<Septype>,
+    fields: Option<u32>,
+    chars: Option<u32>,
 }
 
-/// Parse `args` (argv\[0\] first) the way macOS uniq does and return the
-/// equivalent canonical argument list for clap.
-pub fn normalize(args: &[OsString], posixly_correct: bool) -> Result<Vec<OsString>, ArgError> {
+/// Parse `args` (argv\[0\] first) the way macOS uniq does.
+pub fn parse(args: &[OsString], posixly_correct: bool) -> Result<Parsed, ArgError> {
     let mut argv: Vec<Vec<u8>> = args.iter().map(|a| a.as_bytes().to_vec()).collect();
     obsolete(&mut argv);
 
@@ -88,8 +97,8 @@ pub fn normalize(args: &[OsString], posixly_correct: bool) -> Result<Vec<OsStrin
                 }
                 i += 1;
                 let (opt, value) = long_option(name, &argv, &mut i)?;
-                if let Some(canonical) = apply(&mut opts, opt, value)? {
-                    return Ok(vec![args[0].clone(), canonical.into()]);
+                if let Some(done) = apply(&mut opts, opt, value)? {
+                    return Ok(done);
                 }
                 continue 'args;
             }
@@ -143,30 +152,22 @@ pub fn normalize(args: &[OsString], posixly_correct: bool) -> Result<Vec<OsStrin
         }
     }
 
-    let operands = &argv[i..];
+    let mut operands = argv.drain(i..).map(OsString::from_vec);
     if operands.len() > 2 {
         return Err(ArgError::Usage(None));
     }
-    let mut out = vec![args[0].clone()];
-    let flags = [
-        (opts.count, "--count"),
-        (opts.repeated, "--repeated"),
-        (opts.ignore_case, "--ignore-case"),
-        (opts.unique, "--unique"),
-    ];
-    out.extend(flags.iter().filter(|f| f.0).map(|f| OsString::from(f.1)));
-    if let Some(all) = opts.all {
-        out.push(format!("--all-repeated={all}").into());
-    }
-    if let Some(n) = opts.fields {
-        out.push(format!("--skip-fields={n}").into());
-    }
-    if let Some(n) = opts.chars {
-        out.push(format!("--skip-chars={n}").into());
-    }
-    out.push("--".into());
-    out.extend(operands.iter().map(|o| OsString::from_vec(o.clone())));
-    Ok(out)
+    Ok(Parsed::Run(Box::new(Cli {
+        global: GlobalArgs {},
+        input: operands.next(),
+        output: operands.next(),
+        count: opts.count,
+        repeated: opts.repeated,
+        all_repeated: opts.all,
+        skip_fields: opts.fields,
+        ignore_case: opts.ignore_case,
+        skip_chars: opts.chars,
+        unique: opts.unique,
+    })))
 }
 
 /// `obsolete()` in uniq.c: `-NUM` becomes `-fNUM` and `+NUM` becomes `-sNUM`,
@@ -250,13 +251,9 @@ fn long_option(
     }
 }
 
-/// The `switch` in uniq.c's option loop. Returns a canonical argument when the
+/// The `switch` in uniq.c's option loop. Returns the result early when the
 /// option ends parsing (--help, --version).
-fn apply(
-    opts: &mut Opts,
-    opt: u8,
-    value: Option<Vec<u8>>,
-) -> Result<Option<&'static str>, ArgError> {
+fn apply(opts: &mut Opts, opt: u8, value: Option<Vec<u8>>) -> Result<Option<Parsed>, ArgError> {
     match opt {
         b'c' => opts.count = true,
         b'd' => opts.repeated = true,
@@ -265,10 +262,15 @@ fn apply(
         b'D' => {
             let septype = value.as_deref().unwrap_or(b"none");
             opts.all = Some(
-                ["none", "prepend", "separate"]
-                    .into_iter()
-                    .find(|s| s.as_bytes().eq_ignore_ascii_case(septype))
-                    .ok_or(ArgError::Usage(None))?,
+                [
+                    ("none", Septype::Nosep),
+                    ("prepend", Septype::Prepend),
+                    ("separate", Septype::Separate),
+                ]
+                .into_iter()
+                .find(|(name, _)| name.as_bytes().eq_ignore_ascii_case(septype))
+                .ok_or(ArgError::Usage(None))?
+                .1,
             );
         }
         b'f' => opts.fields = Some(skip_value("field", value.as_deref().unwrap_or_default())?),
@@ -278,14 +280,14 @@ fn apply(
                 value.as_deref().unwrap_or_default(),
             )?)
         }
-        b'H' => return Ok(Some("--help")),
-        _ => return Ok(Some("--version")),
+        b'H' => return Ok(Some(Parsed::Help)),
+        _ => return Ok(Some(Parsed::Version)),
     }
     Ok(None)
 }
 
 /// `strtonum(value, 0, INT_MAX)` with uniq's error messages.
-fn skip_value(what: &str, value: &[u8]) -> Result<i64, ArgError> {
+fn skip_value(what: &str, value: &[u8]) -> Result<u32, ArgError> {
     let fail = |why: &str| {
         ArgError::Fatal(format!(
             "{what} skip value is {why}: {}",
@@ -295,8 +297,10 @@ fn skip_value(what: &str, value: &[u8]) -> Result<i64, ArgError> {
     match strtoll(value) {
         None => Err(fail("invalid")),
         Some(n) if n < 0 => Err(fail("too small")),
-        Some(n) if n > i64::from(i32::MAX) => Err(fail("too large")),
-        Some(n) => Ok(n),
+        Some(n) => u32::try_from(n)
+            .ok()
+            .filter(|n| *n <= i32::MAX as u32)
+            .ok_or_else(|| fail("too large")),
     }
 }
 
@@ -333,39 +337,36 @@ fn strtoll(s: &[u8]) -> Option<i64> {
 mod tests {
     use super::*;
 
-    fn norm(args: &[&str]) -> Result<Vec<String>, ArgError> {
+    fn parse_args(args: &[&str]) -> Result<Parsed, ArgError> {
         let args: Vec<OsString> = std::iter::once("uniq")
             .chain(args.iter().copied())
             .map(OsString::from)
             .collect();
-        normalize(&args, false).map(|v| {
-            v.into_iter()
-                .skip(1)
-                .map(|a| a.into_string().unwrap())
-                .collect()
-        })
+        parse(&args, false)
     }
 
     #[test]
-    fn canonical_form() {
-        assert_eq!(
-            norm(&["-cdiu", "-DSeparate", "-f", " 2", "-s3", "in", "out"]).unwrap(),
-            [
-                "--count",
-                "--repeated",
-                "--ignore-case",
-                "--unique",
-                "--all-repeated=separate",
-                "--skip-fields=2",
-                "--skip-chars=3",
-                "--",
-                "in",
-                "out"
-            ]
-        );
-        assert_eq!(norm(&[]).unwrap(), ["--"]);
-        assert_eq!(norm(&["-"]).unwrap(), ["--", "-"]);
-        assert_eq!(norm(&["--help", "-x"]).unwrap(), ["--help"]);
+    fn parses_into_cli() {
+        let Ok(Parsed::Run(cli)) =
+            parse_args(&["-cdiu", "-DSeparate", "-f", " 2", "-s3", "in", "out"])
+        else {
+            panic!("expected a run");
+        };
+        assert!(cli.count && cli.repeated && cli.ignore_case && cli.unique);
+        assert_eq!(cli.all_repeated, Some(Septype::Separate));
+        assert_eq!((cli.skip_fields, cli.skip_chars), (Some(2), Some(3)));
+        assert_eq!(cli.input.as_deref(), Some("in".as_ref()));
+        assert_eq!(cli.output.as_deref(), Some("out".as_ref()));
+        let Ok(Parsed::Run(cli)) = parse_args(&["-"]) else {
+            panic!("expected a run");
+        };
+        assert_eq!(cli.input.as_deref(), Some("-".as_ref()));
+        assert!(cli.output.is_none() && cli.all_repeated.is_none());
+        assert!(matches!(parse_args(&["--help", "-x"]), Ok(Parsed::Help)));
+        assert!(matches!(
+            parse_args(&["-c", "--version"]),
+            Ok(Parsed::Version)
+        ));
     }
 
     #[test]
@@ -383,7 +384,9 @@ mod tests {
     #[test]
     fn non_utf8_arguments_survive() {
         let raw = OsString::from_vec(b"in\xff".to_vec());
-        let out = normalize(&["uniq".into(), raw.clone()], false).unwrap();
-        assert_eq!(out.last(), Some(&raw));
+        let Ok(Parsed::Run(cli)) = parse(&["uniq".into(), raw.clone()], false) else {
+            panic!("expected a run");
+        };
+        assert_eq!(cli.input, Some(raw));
     }
 }
