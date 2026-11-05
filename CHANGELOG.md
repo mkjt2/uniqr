@@ -6,6 +6,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-05
+
 ### Added
 - `uniqr`: a compatible Rust port of macOS `uniq` (text_cmds-199): every option
   including `-D[septype]` and the obsolete `-NUM`/`+NUM`, BSD `getopt_long`
