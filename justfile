@@ -1,5 +1,5 @@
 # Local CI and release tasks. `just ci` is the canonical CI: it runs fully
-# locally and does not depend on GitHub Actions.
+# locally; .github/workflows/ci.yml runs it (and more) on every push.
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
@@ -41,6 +41,16 @@ snapshots:
 # Verify Linux musl release binaries are fully static (skipped without zig)
 static-check:
     scripts/static-check.sh
+
+# Benchmark uniqr against /usr/bin/uniq; Markdown tables on stdout (`just bench --help`)
+bench *args:
+    cargo build --locked --release
+    scripts/bench.py {{ args }}
+
+# Differential fuzzing against /usr/bin/uniq (`just fuzz --help`)
+fuzz *args:
+    cargo build --locked --release
+    scripts/fuzz.py {{ args }}
 
 # Build release archives for every target this host can build
 dist *args:

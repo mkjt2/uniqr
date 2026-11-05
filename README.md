@@ -1,93 +1,99 @@
 # uniqr
 
-Report or filter out repeated lines in a file: a byte-for-byte compatible
-Rust clone of macOS `uniq` (Apple text_cmds-199), faster and leaner.
+[![CI](https://github.com/mkjt2/uniqr/actions/workflows/ci.yml/badge.svg)](https://github.com/mkjt2/uniqr/actions/workflows/ci.yml)
 
-```sh
-sort cities.txt | uniqr -c        # count how often each line occurs
-uniqr -d -i names.txt             # lines repeated in a row, ignoring case
-uniqr -Dseparate -f 1 log.txt     # every repeated group, blank line after each
-```
+A Rust port of the macOS `uniq`: same options, same output, same error messages,
+and 5-8x faster on ASCII text.
 
-## Compatibility
+## Why
 
-Same options (`-c -d -D[septype] -f -i -s -u`, their long forms, the obsolete
-`-NUM`/`+NUM`), same output, same error messages and exit status (usage errors
-exit 1). Behavior that is easy to get wrong and is reproduced on purpose:
+Just for fun: to see what the Rust rage is all about. Take a classic Unix
+tool, write a compatible port, and see how it compares. The sibling project
+[rsort](https://github.com/mkjt2/rsort) does the same for `sort`.
+
+What came out is a drop-in replacement for pipelines on macOS. The speedup is
+large on ASCII, small on non-ASCII text (libc's collation dominates there), and
+memory use is about the same. If `uniq` isn't a bottleneck for you, the system
+one is just fine.
+
+## Benchmarks
+
+Each scenario runs `/usr/bin/uniq` and uniqr on the same generated input in
+`en_US.UTF-8`, alternating between them with output to `/dev/null`: 1 warmup and
+5 timed runs each, median wall time, and a check that the outputs are
+byte-identical. Apple M4 (10 cores, 16 GiB), macOS 27.2 (text_cmds-201). Run it
+yourself with `just bench`.
+
+🏆 marks the faster or smaller of the two.
+
+**Time** (lower ratio is better; uniqr is faster on all 9 non-empty inputs, and
+startup is a tie at 2 ms):
+
+| Scenario | Flags | uniq | uniqr | uniqr/uniq |
+| --- | --- | ---: | ---: | ---: |
+| 3M lines, groups of 3 | | 218 ms | 40 ms 🏆 | 0.18× |
+| 3M lines, groups of 3 | `-c` | 255 ms | 44 ms 🏆 | 0.17× |
+| 5M unique lines | | 608 ms | 80 ms 🏆 | 0.13× |
+| 5M unique lines | `-u` | 608 ms | 85 ms 🏆 | 0.14× |
+| 5M identical lines | `-c` | 427 ms | 84 ms 🏆 | 0.20× |
+| 3M log lines, skip a field | `-f 1 -c` | 413 ms | 78 ms 🏆 | 0.19× |
+| 3M log lines, skip characters | `-s 3 -d` | 403 ms | 57 ms 🏆 | 0.14× |
+| 2M UTF-8 lines | `-c` | 998 ms | 837 ms 🏆 | 0.84× |
+| 2M UTF-8 lines, fold case | `-i -f 1 -c` | 1.21 s | 1.16 s 🏆 | 0.96× |
+| Empty input (startup) | | 2 ms | 2 ms | 1.13× |
+
+**Memory** (constant in the input size; lower ratio is better):
+
+| Measure | Scenario | uniq | uniqr | uniqr/uniq |
+| --- | --- | ---: | ---: | ---: |
+| Peak footprint | 3M lines, groups of 3 | 1.28 MiB | 1.22 MiB 🏆 | 0.95× |
+| Peak footprint | 2M UTF-8 lines, fold case | 1.42 MiB | 1.38 MiB 🏆 | 0.97× |
+| Peak footprint | Empty input | 1.17 MiB 🏆 | 1.22 MiB | 1.04× |
+| Max RSS | 3M lines, groups of 3 | 1.27 MiB 🏆 | 2.03 MiB | 1.60× |
+| Max RSS | 2M UTF-8 lines, fold case | 1.45 MiB 🏆 | 2.28 MiB | 1.57× |
+| Max RSS | Empty input | 1.17 MiB 🏆 | 2.03 MiB | 1.73× |
+
+Max RSS favors `/usr/bin/uniq` because it lives in the dyld shared cache, whose
+pages aren't charged to the process; footprint leaves those shared pages out.
+uniqr's binary is also much larger: 1.3 MB against 53 KB for the arm64 slice of
+`/usr/bin/uniq`.
+
+## Validation
+
+uniqr is ported from Apple's text_cmds-199 and checked against that source's own
+tests and against `/usr/bin/uniq` itself:
+
+- **uniq's test suite.** Apple's source
+  ([text_cmds](https://github.com/apple-oss-distributions/text_cmds)) ships
+  `uniq/tests/uniq_test.sh`. It's vendored unchanged and all 15 cases run
+  against uniqr and, to validate the harness, against `/usr/bin/uniq` (see
+  [tests/upstream](tests/upstream/README.md)).
+- **Fuzzing.** `just fuzz` generates random flags in every syntax BSD
+  `getopt_long` accepts, deliberate mistakes, and inputs full of near-duplicate
+  lines, NUL bytes and invalid UTF-8, across 11 locale names. uniqr runs through
+  a symlink named `uniq`, and stdout, stderr, exit status and output files must
+  all match byte for byte. A 10,000-case run on macOS 27.2 has 0 mismatches.
+- **Recorded behavior.** 56 cases in [`cli.toml`](cli.toml) and 53 byte-exact
+  cases in `tests/data/locale_cases.rs`, recorded from `/usr/bin/uniq`, cover
+  invalid UTF-8, legacy encodings and macOS collation.
+- **The ASCII fast path.** uniqr skips libc calls for ASCII text. On macOS,
+  `tests/collation.rs` re-checks against every installed UTF-8 locale the two
+  facts that shortcut relies on.
+- **Unit and integration tests**, 94% line coverage, and CI on macOS (where the
+  suites above run against the runner's uniq) and on Linux (the static musl
+  builds that ship).
+
+Some of what that holds in place:
 
 - BSD `getopt_long` parsing: options stop at the first operand, `-D`'s value
-  must be attached (`-Dprepend`), long options abbreviate (`--cou`).
+  must be attached (`-Dprepend`), long options abbreviate (`--cou`), and the
+  obsolete `-NUM` and `+NUM` work. Usage errors exit 1.
 - Lines are C strings: output stops at a NUL byte, as in the original.
-- Locale-aware comparison through libc: `-i` uses `towlower`, `-f` uses
-  `iswblank`, `-s` counts characters, and lines are equal when `wcscoll` says
-  so. In macOS UTF-8 locales that means characters the locale's collation does
-  not define are ignored: `printf 'ж\nя\n' | uniq` prints one line, and so does
-  `uniqr`.
-- SIGPIPE is inherited (dies quietly on a closed pipe by default; reports
-  `stdout: Broken pipe` and exits 1 when SIGPIPE is ignored).
-- Error messages use the name it was invoked as, so a symlink named `uniq`
-  prints exactly what `/usr/bin/uniq` prints.
-
-Additions: `--help`, `--version` (exact spelling only; the original rejects
-them) and the hidden `--generate man|schema|complete-<shell>`. Output is also
-flushed before every blocking read, so `tail -f log | uniqr` shows lines as
-they arrive (the original does this only on a terminal).
-
-On Linux (static musl builds) the C and UTF-8 locales behave the same way,
-but musl has no collation (`wcscoll` is `wcscmp`) and its own Unicode case
-tables, so non-ASCII results can differ from macOS.
-
-### How compatibility is checked
-
-- `cli.toml` behavior cases, recorded from `/usr/bin/uniq`.
-- `tests/data/locale_cases.rs`: byte-exact cases recorded from `/usr/bin/uniq`
-  (`scripts/record_locale_cases.py`) for invalid UTF-8, legacy encodings and
-  macOS collation.
-- The original's own test suite, vendored verbatim in `tests/upstream/` and
-  run against both `uniqr` and `/usr/bin/uniq` (`tests/upstream.rs`).
-- `scripts/fuzz.py`: differential fuzzing against `/usr/bin/uniq` comparing
-  stdout, stderr, exit status and output files (`scripts/fuzz.py --cases 10000`).
-- `tests/collation.rs` re-checks, against every UTF-8 locale installed, the two
-  facts uniqr relies on to skip libc calls for ASCII text.
-
-## Performance
-
-macOS arm64, best of 5 runs, `scripts/bench.sh` (output verified identical). 🏆 marks the better number:
-
-| Workload | Time uniq | Time uniqr | Speedup | Peak footprint uniq | Peak footprint uniqr |
-| --- | --- | --- | --- | --- | --- |
-| 3M lines, groups of 3 | 0.18 s | 0.03 s 🏆 | 6x | 1.28 MiB | 1.22 MiB 🏆 |
-| 5M unique lines, `-u` | 0.39 s | 0.06 s 🏆 | 6.5x | 1.33 MiB | 1.22 MiB 🏆 |
-| 3M lines, `-f 1 -c` | 0.41 s | 0.07 s 🏆 | 5.9x | 1.33 MiB | 1.22 MiB 🏆 |
-| 2M UTF-8 lines, `-c` | 0.99 s | 0.82 s 🏆 | 1.2x | 1.38 MiB | 1.38 MiB (tie) |
-| 2M UTF-8 lines, `-i -f 1 -c` | 1.20 s | 1.14 s 🏆 | 1.1x | 1.42 MiB | 1.38 MiB 🏆 |
-
-Memory is constant in the input size (a 16 KiB read buffer, an 8 KiB output
-buffer and a copy of the previous line). Non-ASCII text in a UTF-8 locale is
-dominated by libc's `wcscoll`, which both programs call. Maximum RSS is higher
-for uniqr (about 2.0-2.3 MiB vs 1.2-1.4 MiB) because `/usr/bin/uniq` lives in
-the dyld shared cache, whose pages are not charged to the process. Any binary
-outside it starts higher (an empty C program: 1.7 MiB RSS).
-
-Benchmark inputs:
-
-```sh
-seq 1 3000000 | awk '{print int($1/3)}' > dups3.txt
-seq 1 5000000 > unique.txt
-yes 'the same line over and over' | head -5000000 > same.txt
-python3 - <<'PY'
-import random; random.seed(1)
-words = ['апельсин', 'яблоко', 'груша', 'слива', 'вишня', 'Apple', 'apple', 'APPLE',
-         'banana', 'Ελλάδα', '中文', 'naïve', 'café']
-with open('utf8.txt', 'w') as f:
-    for i in range(2000000):
-        w = random.choice(words); f.write(f'{i//4} {w} {w}\n')
-with open('fields.txt', 'w') as f:
-    for i in range(3000000):
-        f.write(f'{i} host{(i//5)%1000} GET /index.html 200\n')
-PY
-scripts/bench.sh .
-```
+- Locale-aware comparison through libc, including its surprises: in macOS UTF-8
+  locales, characters the collation doesn't define are ignored, so
+  `printf 'ж\nя\n' | uniq` prints one line, and so does `uniqr`.
+- SIGPIPE is inherited: it dies quietly on a closed pipe, or reports
+  `stdout: Broken pipe` and exits 1 when SIGPIPE is ignored.
 
 ## Install
 
@@ -95,45 +101,86 @@ scripts/bench.sh .
 curl -fsSL https://github.com/mkjt2/uniqr/releases/latest/download/install.sh | sh
 ```
 
-Prebuilt binaries for Linux (static musl) and macOS are attached to each
-[GitHub release](https://github.com/mkjt2/uniqr/releases).
-From source: `cargo install --locked --git https://github.com/mkjt2/uniqr`.
-
-## Usage
+Prebuilt binaries for macOS and Linux (static) are on each
+[release](https://github.com/mkjt2/uniqr/releases). From source:
+`cargo install --locked --git https://github.com/mkjt2/uniqr`.
 
 ```sh
-uniqr --help              # human help, with examples and exit codes
-uniqr --generate schema   # the full interface as JSON (for scripts and agents)
+sort cities.txt | uniqr -c           # count how often each line occurs
+uniqr -d -i names.txt                # lines repeated in a row, ignoring case
+uniqr -Dseparate -f 1 log.txt        # every repeated group, blank line after each
+uniqr --help                         # every flag, with examples and exit codes
 ```
+
+As with `uniq`, only adjacent lines count as repeats, so sort first to find all
+duplicates. To use it under the original name, symlink it: a link named `uniq`
+prints exactly what `/usr/bin/uniq` prints, including in error messages.
+
+## Differences from macOS uniq
+
+- `--help` and `--version` exist (exact spelling only; the original rejects
+  them), as does the hidden `--generate man|schema|complete-<shell>`. A bad
+  `--generate` target exits 2.
+- Errors use the name it was invoked as: `uniqr: nope: No such file or
+  directory`, unless it's invoked through a link named `uniq`.
+- Output is flushed before every blocking read, so `tail -f log | uniqr` shows
+  lines as they arrive. The original does this only on a terminal.
+- The Linux builds are static musl binaries. The C and UTF-8 locales work, but
+  there's no collation (`wcscoll` is `wcscmp`), case folding uses musl's own
+  Unicode tables, and with no locale variables set the locale is UTF-8 rather
+  than C, so non-ASCII results can differ from macOS.
 
 ## Development
 
-Requirements: [rustup](https://rustup.rs), [just](https://just.systems) and
-`cargo-llvm-cov`. Releases also need `zig`, `cargo-zigbuild` (static Linux builds)
-and `gh`.
-
-```sh
-brew install just cargo-llvm-cov            # macOS
-brew install zig cargo-zigbuild gh          # macOS, for releases
-cargo install just cargo-llvm-cov           # Linux (install zig and gh from your package manager)
-```
+Needs [rustup](https://rustup.rs), [just](https://just.systems) and
+`cargo-llvm-cov` (`brew install just cargo-llvm-cov`). Releases also need `zig`,
+`cargo-zigbuild` and `gh` (`brew install zig cargo-zigbuild gh`).
 
 | Task | Command |
 | --- | --- |
-| Full local CI (fmt, clippy, tests, 90% coverage gate, static check) | `just ci` |
+| Local CI: fmt, clippy, tests, 90% coverage gate, static check | `just ci` |
 | Run tests | `just test` |
 | Accept changed `--help` snapshots | `just snapshots` |
-| Build release archives | `just dist` |
-| Cut a release (describe it under `[Unreleased]` in CHANGELOG.md first) | `just release 1.2.0` |
-| Preview a release (runs CI and builds every archive, changes nothing) | `just release --dry-run 1.2.0` |
-| Upgrade toolchain and dependencies | `just upgrade` |
-| Differential fuzzing against `/usr/bin/uniq` | `cargo build --release && scripts/fuzz.py` |
-| Benchmark against `/usr/bin/uniq` | `cargo build --release && scripts/bench.sh DIR` |
+| Benchmark against `/usr/bin/uniq` | `just bench` |
+| Fuzz against `/usr/bin/uniq` (`--cases`, `--seed`) | `just fuzz` |
 | Re-record the byte-exact locale cases | `scripts/record_locale_cases.py` |
+| Upgrade toolchain and dependencies | `just upgrade` |
 
-To add trailers to the release commit, set `RELEASE_COMMIT_TRAILERS` (one
-`Key: value` per line); see `scripts/release.sh`.
+The interface (flags, help text, exit codes) is defined in
+[`cli.toml`](cli.toml); `tests/conformance.rs` keeps the code in line with it.
 
-The interface is defined in [`cli.toml`](cli.toml): commands, flags, help text,
-exit codes and JSON output schemas. `tests/conformance.rs` fails if the code
-drifts from it.
+### CI
+
+[GitHub Actions](.github/workflows/ci.yml) runs on every push to `main` and on
+pull requests:
+
+| Job | Runner | Runs |
+| --- | --- | --- |
+| macOS | `macos-latest` | `just ci`, including the comparisons with `/usr/bin/uniq` |
+| Differential | `macos-latest` | `just fuzz --cases 2000` with a new random seed each run |
+| Linux | `ubuntu-latest` | `just test` on the musl target, `just static-check` |
+
+### Releasing
+
+Releases are cut from a local machine, which builds the macOS and Linux archives:
+
+1. Describe the changes under `## [Unreleased]` in `CHANGELOG.md`, push, and wait
+   for CI to pass. The release runs `just ci` again, but not the fuzzer or the
+   musl tests.
+2. Preview it with `just release --dry-run 1.2.0`, which runs `just ci`, builds
+   every archive into a temporary directory, and restores the files it changed.
+3. Run `just release 1.2.0`. It bumps the version, dates the changelog, builds
+   archives for Linux and macOS on x86_64 and arm64, commits, tags `v1.2.0`,
+   pushes, and creates the GitHub release with the archives, checksums and
+   `install.sh`, using the changelog section as its notes.
+
+If a step fails before the commit, the files are restored and nothing is
+published. If one fails after it, the script prints the remaining commands to
+run by hand. To add trailers to the release commit, set
+`RELEASE_COMMIT_TRAILERS`; see `scripts/release.sh`.
+
+## License
+
+[Apache-2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT), at your option. uniqr follows
+the logic of FreeBSD's uniq (which macOS ships) and `getopt_long`, and vendors
+uniq's test suite; see [`NOTICE`](NOTICE).

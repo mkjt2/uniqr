@@ -3,13 +3,13 @@ name = "uniqr"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
-description = "Report or filter out repeated lines in a file"
+description = "A fast, compatible Rust port of macOS uniq: report or filter out repeated lines"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/mkjt2/uniqr"
 readme = "README.md"
-keywords = ["cli"]
+keywords = ["cli", "uniq", "macos", "text", "coreutils"]
 categories = ["command-line-utilities"]
-include = ["src/**/*", "build.rs", "cli.toml", "Cargo.toml", "Cargo.lock", "README.md", "CHANGELOG.md"]
+include = ["src/**/*", "build.rs", "cli.toml", "Cargo.toml", "Cargo.lock", "README.md", "CHANGELOG.md", "LICENSE-MIT", "LICENSE-APACHE", "NOTICE"]
 
 [[bin]]
 name = "uniqr"

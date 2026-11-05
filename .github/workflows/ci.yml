@@ -1,0 +1,63 @@
+# Hosted CI. `just ci` stays the canonical local check; this runs it on macOS
+# (where the tests also compare uniqr with /usr/bin/uniq), adds differential
+# fuzzing, and tests the static musl builds that ship for Linux.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  macos:
+    name: macOS (fmt, clippy, tests, coverage)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,cargo-llvm-cov
+      - run: just ci
+
+  differential:
+    name: macOS (fuzz against /usr/bin/uniq)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - run: sw_vers
+      - run: just fuzz --cases 2000
+
+  linux:
+    name: Linux (tests on musl, static release binaries)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,cargo-zigbuild
+      # musl, not the runner's glibc: this is what the Linux archives contain.
+      - run: just test --target x86_64-unknown-linux-musl
+      - run: just static-check
