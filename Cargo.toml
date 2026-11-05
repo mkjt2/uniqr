@@ -9,36 +9,27 @@ repository = "https://github.com/mkjt2/uniqr"
 readme = "README.md"
 keywords = ["cli", "uniq", "macos", "text", "coreutils"]
 categories = ["command-line-utilities"]
-include = ["src/**/*", "build.rs", "cli.toml", "Cargo.toml", "Cargo.lock", "README.md", "CHANGELOG.md", "LICENSE-MIT", "LICENSE-APACHE", "NOTICE"]
+include = ["src/**/*", "cli.toml", "Cargo.toml", "Cargo.lock", "README.md", "CHANGELOG.md", "LICENSE-MIT", "LICENSE-APACHE", "NOTICE"]
 
 [[bin]]
 name = "uniqr"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.6.7", features = ["derive", "env", "string", "wrap_help"] }
-clap_complete = "4.6.11"
-clap_mangen = "0.3.3"
 libc = "0.2.191"
 memchr = "2.8.3"
-miette = { version = "7.6.0", features = ["fancy-no-backtrace"] }
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
-thiserror = "2.0.21"
-tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
-# build.rs renders cli.toml with src/spec.rs; the binary never parses it.
-[build-dependencies]
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
-toml = "1.1.8"
-
+# clap and friends render --help, the man page and completions at development
+# time (examples/generate.rs); they never reach the shipped binary.
 [dev-dependencies]
 assert_cmd = "2.2.2"
+clap = { version = "4.6.7", features = ["string", "wrap_help"] }
+clap_complete = "4.6.11"
+clap_mangen = "0.3.3"
 insta = "1.49.0"
-jsonschema = { version = "0.60.2", default-features = false }
 predicates = "3.1.4"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 tempfile = "3.27.0"
 toml = "1.1.8"
 

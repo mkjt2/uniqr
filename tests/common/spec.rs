@@ -7,17 +7,13 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Exit codes every generated CLI uses unless `cli.toml` redefines them.
+/// Exit codes the CLI uses unless `cli.toml` redefines them.
 /// `error` moves to `[cli].error_exit_code` when that is set.
 pub const BUILTIN_EXIT_CODES: &[(i32, &str, &str)] = &[
     (0, "ok", "Success"),
     (1, "error", "General error"),
-    (2, "usage", "Invalid arguments or usage"),
     (130, "interrupted", "Interrupted (Ctrl-C)"),
 ];
-
-/// Usage errors always exit with this code.
-pub const USAGE_EXIT_CODE: i32 = 2;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -64,7 +60,7 @@ pub struct CliInfo {
     /// How errors are shown to humans.
     #[serde(default)]
     pub error_style: ErrorStyle,
-    /// Exit code for general errors (default 1). Usage errors always exit 2.
+    /// Exit code for general errors (default 1).
     #[serde(default = "default_error_exit_code")]
     pub error_exit_code: i32,
 }
@@ -364,19 +360,6 @@ impl Spec {
         codes
     }
 
-    /// (name, code) pairs `src/error.rs` must produce: usage, error and every
-    /// declared code.
-    pub fn error_catalog(&self) -> std::collections::BTreeSet<(String, i32)> {
-        let mut set: std::collections::BTreeSet<(String, i32)> = self
-            .exit_codes
-            .iter()
-            .map(|c| (c.name.clone(), c.code))
-            .collect();
-        set.insert(("usage".into(), USAGE_EXIT_CODE));
-        set.insert(("error".into(), self.cli.error_exit_code));
-        set
-    }
-
     /// Text after the root `--help`: examples, exit codes and, when there is a
     /// `schema` command, a pointer to it.
     pub fn root_after_help(&self) -> String {
@@ -398,7 +381,7 @@ impl Spec {
         out.trim_end().to_string()
     }
 
-    /// The machine-readable interface printed by `schema` and `--generate schema`.
+    /// The machine-readable interface printed by `examples/generate.rs schema`.
     pub fn schema_document(&self, version: &str) -> serde_json::Value {
         use serde_json::json;
         let commands: Vec<serde_json::Value> = self
@@ -422,23 +405,6 @@ impl Spec {
             "exit_codes": self.all_exit_codes(),
             "env": self.env,
             "config_keys": self.config_keys,
-            "error_schema": {
-                "description": "With --json, failures write one line to stderr with this shape",
-                "type": "object",
-                "required": ["error"],
-                "properties": {
-                    "error": {
-                        "type": "object",
-                        "required": ["code", "exit_code", "message"],
-                        "properties": {
-                            "code": { "type": "string" },
-                            "exit_code": { "type": "integer" },
-                            "message": { "type": "string" },
-                            "hint": { "type": "string" }
-                        }
-                    }
-                }
-            }
         })
     }
 

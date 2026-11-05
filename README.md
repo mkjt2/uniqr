@@ -31,32 +31,35 @@ startup is a tie at 2 ms):
 
 | Scenario | Flags | uniq | uniqr | uniqr/uniq |
 | --- | --- | ---: | ---: | ---: |
-| 3M lines, groups of 3 | | 218 ms | 40 ms 🏆 | 0.18× |
-| 3M lines, groups of 3 | `-c` | 255 ms | 44 ms 🏆 | 0.17× |
-| 5M unique lines | | 608 ms | 80 ms 🏆 | 0.13× |
-| 5M unique lines | `-u` | 608 ms | 85 ms 🏆 | 0.14× |
-| 5M identical lines | `-c` | 427 ms | 84 ms 🏆 | 0.20× |
-| 3M log lines, skip a field | `-f 1 -c` | 413 ms | 78 ms 🏆 | 0.19× |
-| 3M log lines, skip characters | `-s 3 -d` | 403 ms | 57 ms 🏆 | 0.14× |
-| 2M UTF-8 lines | `-c` | 998 ms | 837 ms 🏆 | 0.84× |
-| 2M UTF-8 lines, fold case | `-i -f 1 -c` | 1.21 s | 1.16 s 🏆 | 0.96× |
-| Empty input (startup) | | 2 ms | 2 ms | 1.13× |
+| 3M lines, groups of 3 | | 222 ms | 39 ms 🏆 | 0.17× |
+| 3M lines, groups of 3 | `-c` | 261 ms | 44 ms 🏆 | 0.17× |
+| 5M unique lines | | 624 ms | 81 ms 🏆 | 0.13× |
+| 5M unique lines | `-u` | 626 ms | 84 ms 🏆 | 0.13× |
+| 5M identical lines | `-c` | 430 ms | 85 ms 🏆 | 0.20× |
+| 3M log lines, skip a field | `-f 1 -c` | 414 ms | 77 ms 🏆 | 0.19× |
+| 3M log lines, skip characters | `-s 3 -d` | 408 ms | 56 ms 🏆 | 0.14× |
+| 2M UTF-8 lines | `-c` | 997 ms | 831 ms 🏆 | 0.83× |
+| 2M UTF-8 lines, fold case | `-i -f 1 -c` | 1.21 s | 1.15 s 🏆 | 0.95× |
+| Empty input (startup) | | 2 ms | 2 ms | 1.25× |
 
 **Memory** (constant in the input size; lower ratio is better):
 
 | Measure | Scenario | uniq | uniqr | uniqr/uniq |
 | --- | --- | ---: | ---: | ---: |
-| Peak footprint | 3M lines, groups of 3 | 1.28 MiB | 1.22 MiB 🏆 | 0.95× |
-| Peak footprint | 2M UTF-8 lines, fold case | 1.42 MiB | 1.38 MiB 🏆 | 0.97× |
-| Peak footprint | Empty input | 1.17 MiB 🏆 | 1.22 MiB | 1.04× |
-| Max RSS | 3M lines, groups of 3 | 1.27 MiB 🏆 | 2.03 MiB | 1.60× |
-| Max RSS | 2M UTF-8 lines, fold case | 1.45 MiB 🏆 | 2.28 MiB | 1.57× |
-| Max RSS | Empty input | 1.17 MiB 🏆 | 2.03 MiB | 1.73× |
+| Peak footprint | 3M lines, groups of 3 | 1.28 MiB | 1.19 MiB 🏆 | 0.93× |
+| Peak footprint | 2M UTF-8 lines, fold case | 1.42 MiB | 1.36 MiB 🏆 | 0.96× |
+| Peak footprint | Empty input | 1.17 MiB 🏆 | 1.19 MiB | 1.01× |
+| Max RSS | 3M lines, groups of 3 | 1.27 MiB 🏆 | 1.84 MiB | 1.46× |
+| Max RSS | 2M UTF-8 lines, fold case | 1.45 MiB 🏆 | 2.09 MiB | 1.44× |
+| Max RSS | Empty input | 1.17 MiB 🏆 | 1.84 MiB | 1.57× |
 
 Max RSS favors `/usr/bin/uniq` because it lives in the dyld shared cache, whose
-pages aren't charged to the process; footprint leaves those shared pages out.
-uniqr's binary is also much larger: 1.3 MB against 53 KB for the arm64 slice of
-`/usr/bin/uniq`.
+pages aren't charged to the process; footprint leaves those shared pages out. An
+equivalent C program outside the cache starts at 1.64 MiB.
+
+**Binary size:** 352 KB, against 53 KB for the arm64 slice of `/usr/bin/uniq`.
+uniqr's only runtime dependencies are `libc` and `memchr`, and the rest of that
+is mostly Rust's standard library.
 
 ## Validation
 
@@ -79,7 +82,7 @@ tests and against `/usr/bin/uniq` itself:
 - **The ASCII fast path.** uniqr skips libc calls for ASCII text. On macOS,
   `tests/collation.rs` re-checks against every installed UTF-8 locale the two
   facts that shortcut relies on.
-- **Unit and integration tests**, 94% line coverage, and CI on macOS (where the
+- **Unit and integration tests**, 98% line coverage, and CI on macOS (where the
   suites above run against the runner's uniq) and on Linux (the static musl
   builds that ship).
 
@@ -119,8 +122,7 @@ prints exactly what `/usr/bin/uniq` prints, including in error messages.
 ## Differences from macOS uniq
 
 - `--help` and `--version` exist (exact spelling only; the original rejects
-  them), as does the hidden `--generate man|schema|complete-<shell>`. A bad
-  `--generate` target exits 2.
+  them).
 - Errors use the name it was invoked as: `uniqr: nope: No such file or
   directory`, unless it's invoked through a link named `uniq`.
 - Output is flushed before every blocking read, so `tail -f log | uniqr` shows
@@ -140,14 +142,17 @@ Needs [rustup](https://rustup.rs), [just](https://just.systems) and
 | --- | --- |
 | Local CI: fmt, clippy, tests, 90% coverage gate, static check | `just ci` |
 | Run tests | `just test` |
-| Accept changed `--help` snapshots | `just snapshots` |
+| Re-render `--help` from `cli.toml` and accept the snapshot | `just snapshots` |
 | Benchmark against `/usr/bin/uniq` | `just bench` |
 | Fuzz against `/usr/bin/uniq` (`--cases`, `--seed`) | `just fuzz` |
 | Re-record the byte-exact locale cases | `scripts/record_locale_cases.py` |
 | Upgrade toolchain and dependencies | `just upgrade` |
 
 The interface (flags, help text, exit codes) is defined in
-[`cli.toml`](cli.toml); `tests/conformance.rs` keeps the code in line with it.
+[`cli.toml`](cli.toml); `tests/conformance.rs` keeps the code and the prebuilt
+`src/help.txt` in line with it. `clap` is a dev-dependency only:
+`examples/generate.rs` uses it to render the help, man page and completions, so
+it never reaches the binary.
 
 ### CI
 

@@ -38,7 +38,6 @@ extern "C" fn main(argc: std::ffi::c_int, argv: *const *const std::ffi::c_char) 
             out: &mut out,
             err: &mut err,
             input: &mut input,
-            term: uniqr::ctx::Terminal::detect(),
             env: &env,
         },
     );

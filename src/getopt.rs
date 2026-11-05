@@ -2,13 +2,12 @@
 //!
 //! macOS uniq parses its arguments with an obsolete-form rewrite followed by
 //! the FreeBSD-derived `getopt_long(3)` in libc (optstring `"+D::cdif:s:u"`).
-//! clap cannot express that grammar (options stop at the first operand, `-D`
-//! takes a value only when attached, a `-` inside a cluster starts a long
-//! option, usage errors exit 1 with getopt's wording), so the arguments are
-//! parsed here, straight into the clap-derived [`Cli`]; clap itself is only
-//! used to render --help and --version.
+//! That grammar has quirks (options stop at the first operand, `-D` takes a
+//! value only when attached, a `-` inside a cluster starts a long option, usage
+//! errors exit 1 with getopt's wording), so the arguments are
+//! parsed here, straight into [`Cli`].
 
-use crate::cli::{Cli, GlobalArgs, Septype};
+use crate::cli::{Cli, Septype};
 use std::ffi::OsString;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
@@ -30,7 +29,7 @@ pub enum ArgError {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum HasArg {
+pub enum HasArg {
     No,
     Required,
     Optional,
@@ -38,7 +37,7 @@ enum HasArg {
 
 /// `long_opts` in uniq.c, in its order (the order matters for abbreviation
 /// ambiguity), plus uniqr's --help and --version.
-const LONG: &[(&str, HasArg, u8)] = &[
+pub const LONG: &[(&str, HasArg, u8)] = &[
     ("all-repeated", HasArg::Optional, b'D'),
     ("count", HasArg::No, b'c'),
     ("repeated", HasArg::No, b'd'),
@@ -50,7 +49,7 @@ const LONG: &[(&str, HasArg, u8)] = &[
     ("version", HasArg::No, b'V'),
 ];
 
-const SHORT: &[(u8, HasArg)] = &[
+pub const SHORT: &[(u8, HasArg)] = &[
     (b'D', HasArg::Optional),
     (b'c', HasArg::No),
     (b'd', HasArg::No),
@@ -157,7 +156,6 @@ pub fn parse(args: &[OsString], posixly_correct: bool) -> Result<Parsed, ArgErro
         return Err(ArgError::Usage(None));
     }
     Ok(Parsed::Run(Box::new(Cli {
-        global: GlobalArgs {},
         input: operands.next(),
         output: operands.next(),
         count: opts.count,

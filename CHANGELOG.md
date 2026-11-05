@@ -6,6 +6,17 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- The binary is 352 KB on macOS arm64, down from 1.3 MB, and max RSS is 1.84 MiB,
+  down from 2.03 MiB. The only runtime dependencies are now `libc` and `memchr`.
+- `--help` is prebuilt at 100 columns instead of wrapping to the terminal width.
+
+### Removed
+- The hidden `--generate` flag: the man page and completions are rendered when
+  archives are built (`cargo run --example generate`), and `--generate` is now
+  rejected as in the original. Nothing exits 2 any more.
+- `RUST_LOG`, which had nothing to log.
+
 ## [0.1.0] - 2026-11-05
 
 ### Added

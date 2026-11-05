@@ -2,15 +2,14 @@
 //! Its operands and flags are fields on `Cli` in `src/cli.rs`.
 
 use crate::cli::{Cli, Septype};
-use crate::ctx::Ctx;
 use crate::engine::{self, AllRepeated, Bytes, Failure, Mode};
 use crate::error::{AppError, errno_message};
 use crate::locale::{self, Charset, KeySpec, Lazy, SingleByteKeys, Utf8Keys, WideKeys};
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{BufRead, Read, Write};
 
-pub fn run(ctx: &mut Ctx, cli: &Cli) -> Result<(), AppError> {
+pub fn run(stdout: &mut dyn Write, stdin: &mut dyn BufRead, cli: &Cli) -> Result<(), AppError> {
     let mode = Mode::new(
         cli.count,
         cli.repeated,
@@ -34,7 +33,7 @@ pub fn run(ctx: &mut Ctx, cli: &Cli) -> Result<(), AppError> {
             file_in = File::open(p).map_err(|e| path_error(p, &e))?;
             &mut file_in
         }
-        _ => ctx.input,
+        _ => stdin,
     };
     let out_name = cli.output.as_deref().unwrap_or(OsStr::new("stdout"));
     let mut file_out;
@@ -43,7 +42,7 @@ pub fn run(ctx: &mut Ctx, cli: &Cli) -> Result<(), AppError> {
             file_out = File::create(p).map_err(|e| path_error(p, &e))?;
             &mut file_out
         }
-        None => ctx.out,
+        None => stdout,
     };
 
     let spec = KeySpec {

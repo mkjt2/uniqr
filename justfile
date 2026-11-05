@@ -34,8 +34,10 @@ cov:
 cov-html:
     INSTA_UPDATE=no cargo llvm-cov --locked --html
 
-# Accept changed --help snapshots (review the diff with `git diff tests/snapshots`)
+# Re-render src/help.txt from cli.toml and accept the snapshot (review with `git diff`)
 snapshots:
+    cargo run --quiet --locked --example generate -- help > src/help.txt.new
+    mv src/help.txt.new src/help.txt
     INSTA_UPDATE=always cargo test --locked --test help
 
 # Verify Linux musl release binaries are fully static (skipped without zig)

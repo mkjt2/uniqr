@@ -29,16 +29,16 @@ while IFS= read -r line; do targets+=("$line"); done < <(project_list targets)
 
 rm -rf "$dist" && mkdir -p "$dist/stage"
 
-# Completions and man pages come from a native build: they don't depend on target.
+# Completions and man pages don't depend on target, and clap stays out of the
+# binary: a dev-only example renders them from cli.toml.
 info "generating completions and man pages"
-cargo build --locked --release
-host_bin="$TARGET_DIR/release/$NAME"
+generate() { cargo run --quiet --locked --example generate -- "$1"; }
 extras="$dist/stage/extras"
 mkdir -p "$extras/completions" "$extras/man"
-"$host_bin" --generate complete-bash >"$extras/completions/$NAME.bash"
-"$host_bin" --generate complete-zsh >"$extras/completions/_$NAME"
-"$host_bin" --generate complete-fish >"$extras/completions/$NAME.fish"
-"$host_bin" --generate man >"$extras/man/$NAME.1"
+generate complete-bash >"$extras/completions/$NAME.bash"
+generate complete-zsh >"$extras/completions/_$NAME"
+generate complete-fish >"$extras/completions/$NAME.fish"
+generate man >"$extras/man/$NAME.1"
 if $extras_only; then
   info "$extras ready"
   exit 0

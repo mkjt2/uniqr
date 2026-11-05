@@ -1,9 +1,9 @@
 # cli.toml: the source of truth for this CLI's interface.
 #
-# All user-facing text (about, help, examples) lives here. build.rs renders it
-# into the binary at compile time, where it is applied to the clap definitions;
-# the binary never parses this file. A conformance test (tests/conformance.rs)
-# fails if src/cli.rs and this file disagree on structure.
+# All user-facing text (about, help, examples) lives here. The binary never reads
+# this file: `just snapshots` renders --help into src/help.txt, and the man page
+# and completions are rendered when archives are built. tests/conformance.rs
+# fails if src/help.txt or the option tables in src/getopt.rs disagree with it.
 #
 # Schema reference: the cli-maker plugin, skills/design/references/cli-toml.md
 schema_version = 1
@@ -39,7 +39,7 @@ the original prints), followed by `usage: <progname> [-cdiu] [-D[septype]] [-f f
 [-s chars] [input [output]]` for usage errors.
 - Usage errors exit 1, like the original (not cli-maker's 2). cli.toml cannot declare this \
 (usage is always 2 there), so the code below documents it: argv goes through a BSD \
-getopt_long emulator before clap. The emulator implements: stop at the first operand \
+getopt_long emulator. The emulator implements: stop at the first operand \
 (`uniqr in.txt -c` writes to a file named -c); `--` ends options; clustered shorts \
 (-cdu, -cf3); short values attached or separate; -D takes a value only when attached \
 (-Dprepend) and --all-repeated only with = (a separate word is an operand); septype \
@@ -47,8 +47,7 @@ matched case-insensitively; unique-prefix long abbreviations (--cou); the obsole
 and +NUM rewrite (applied to every word before the first operand or --, even option \
 values, as the original does: `-f -1` means -f with value -f1, an error); strtonum(3) \
 range checks for -f/-s (0..=2147483647, leading blanks and a sign allowed, nothing \
-trailing). It then hands clap a canonical argv, so clap never sees invalid input and \
-usage errors exit 1 as in the original (only a bad target for the hidden --generate exits 2).
+trailing). Usage errors exit 1 as in the original.
 - help_flags = [--help], version_flags = [--version]: extensions the original lacks \
 (it rejects them as unrecognized options); long-only so no short letter is taken.
 - Last option wins for -D/-f/-s; -D overrides -d; -d with -u, -c with -D and other odd \
@@ -108,21 +107,15 @@ targets = [
 config = false      # --config, config file, `config show/path`, exit code 3
 self_update = false # `self-update` from GitHub Releases, exit codes 5-6
 json = false        # global --json and JSON errors on stderr
-color = false       # --color (automatic color and NO_COLOR work without it)
+color = false       # --color
 prompts = false     # confirmation prompts, --no-input, exit code 4
-verbosity = false   # -v/-q (logging and RUST_LOG work without it)
+verbosity = false   # -v/-q
 
-# Usage errors exit 1, as in the original; these replace the built-in wording,
-# which would document exit 2 for them.
+# Usage errors exit 1, as in the original.
 [[exit_code]]
 code = 1
 name = "error"
 description = "Error, including invalid options or operands"
-
-[[exit_code]]
-code = 2
-name = "usage"
-description = "Invalid --generate target"
 
 [[env]]
 name = "LC_ALL"
@@ -135,10 +128,6 @@ description = "Character encoding and classes used by -i, -f and -s"
 [[env]]
 name = "LANG"
 description = "Default locale when LC_ALL and LC_CTYPE are unset"
-
-[[env]]
-name = "RUST_LOG"
-description = "Override log filtering (e.g. debug, uniqr=trace)"
 
 # ---------------------------------------------------------------------------
 # Operands

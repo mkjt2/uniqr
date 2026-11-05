@@ -113,7 +113,7 @@ fn exit_codes_are_sorted_and_include_builtins() {
     let mut sorted = codes.clone();
     sorted.sort();
     assert_eq!(codes, sorted);
-    assert!(codes.contains(&0) && codes.contains(&2) && codes.contains(&130));
+    assert!(codes.contains(&0) && codes.contains(&1) && codes.contains(&130));
 }
 
 #[test]
@@ -125,7 +125,6 @@ fn error_exit_code_moves_the_error_builtin() {
         .map(|c| (c.code, c.name))
         .collect();
     assert!(!codes.iter().any(|(_, name)| name == "error"), "{codes:?}");
-    assert!(spec.error_catalog().contains(&("error".into(), 2)));
 }
 
 #[test]
@@ -179,5 +178,4 @@ fn schema_document_describes_the_interface() {
     let doc = spec.schema_document("1.2.3");
     assert_eq!(doc["shape"], "subcommands");
     assert_eq!(doc["commands"][0]["usage"], "x go");
-    assert_eq!(doc["error_schema"]["required"][0], "error");
 }
