@@ -53,6 +53,15 @@ impl AppError {
     }
 }
 
+/// The strerror(3) text of an I/O error, without Rust's ` (os error N)` suffix.
+pub fn errno_message(e: &std::io::Error) -> String {
+    let text = e.to_string();
+    match (e.raw_os_error(), text.rfind(" (os error ")) {
+        (Some(_), Some(i)) => text[..i].to_string(),
+        _ => text,
+    }
+}
+
 /// JSON shape of an error on stderr under `--json`.
 #[derive(Debug, Serialize)]
 pub struct JsonError<'a> {

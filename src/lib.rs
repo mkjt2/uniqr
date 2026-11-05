@@ -4,6 +4,7 @@
 pub mod cli;
 pub mod commands;
 pub mod ctx;
+pub mod engine;
 pub mod error;
 pub mod generated;
 pub mod logging;

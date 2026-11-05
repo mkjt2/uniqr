@@ -7,12 +7,56 @@
 
 use crate::generated::{self, FlagNames};
 use clap::{ArgAction, Args, CommandFactory, Parser, ValueEnum};
+use std::ffi::OsString;
 
 #[derive(Debug, Parser)]
 #[command(version, propagate_version = true, disable_help_subcommand = true)]
 pub struct Cli {
     #[command(flatten)]
     pub global: GlobalArgs,
+
+    #[arg(value_name = "INPUT")]
+    pub input: Option<OsString>,
+
+    #[arg(value_name = "OUTPUT")]
+    pub output: Option<OsString>,
+
+    #[arg(short, long)]
+    pub count: bool,
+
+    #[arg(short = 'd', long)]
+    pub repeated: bool,
+
+    #[arg(
+        short = 'D',
+        long,
+        value_name = "SEPTYPE",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "none",
+        value_enum
+    )]
+    pub all_repeated: Option<Septype>,
+
+    #[arg(short = 'f', long, value_name = "NUM")]
+    pub skip_fields: Option<u32>,
+
+    #[arg(short, long)]
+    pub ignore_case: bool,
+
+    #[arg(short = 's', long, value_name = "CHARS")]
+    pub skip_chars: Option<u32>,
+
+    #[arg(short, long)]
+    pub unique: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Septype {
+    #[value(name = "none")]
+    Nosep,
+    Prepend,
+    Separate,
 }
 
 #[derive(Debug, Args)]

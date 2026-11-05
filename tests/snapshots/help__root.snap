@@ -1,0 +1,69 @@
+---
+source: tests/help.rs
+expression: "String::from_utf8(output.stdout).unwrap()"
+---
+Read INPUT (or standard input), compare adjacent lines, and write one copy of each run of identical
+lines to OUTPUT (or standard output). Repeated lines are only detected when they are adjacent, so
+sort the input first to find all duplicates.
+
+A drop-in clone of macOS uniq: the same options, the same output byte for byte, the same error
+messages and exit status. The obsolete forms -NUM (same as -f NUM) and +NUM (same as -s NUM) are
+accepted. Option parsing stops at the first operand.
+
+Comparisons follow the locale (LC_ALL, LC_CTYPE, LANG): in a UTF-8 locale -i folds Unicode case, -s
+counts characters and -f treats Unicode blanks as separators; in the C locale they work on bytes.
+
+Usage: runiq [OPTIONS] [INPUT] [OUTPUT]
+
+Arguments:
+  [INPUT]
+          File to read; - or absent reads standard input
+
+  [OUTPUT]
+          File to write (created or truncated); absent writes standard output
+
+Options:
+  -c, --count
+          Precede each output line with the number of times it occurred and a space
+
+  -d, --repeated
+          Output one copy of each repeated line; ignored with -D
+
+  -D, --all-repeated[=<SEPTYPE>]
+          Output every copy of each repeated line; SEPTYPE (attached: -Dprepend,
+          --all-repeated=separate) adds a blank line before (prepend) or after (separate) each group
+          [default: none]
+          
+          [possible values: none, prepend, separate]
+
+  -f, --skip-fields <NUM>
+          Ignore the first NUM fields (blank-separated) when comparing
+
+  -i, --ignore-case
+          Compare lines case-insensitively
+
+  -s, --skip-chars <CHARS>
+          Ignore the first CHARS characters when comparing (after any skipped fields)
+
+  -u, --unique
+          Only output lines that are not repeated
+
+      --help
+          Print help
+
+      --version
+          Print version
+
+Examples:
+  # Count how often each line occurs
+  $ sort cities.txt | runiq -c
+  # Show lines repeated in a row, ignoring case
+  $ runiq -d -i names.txt
+  # Print every repeated group, blank line after each, ignoring the first field
+  $ runiq -Dseparate -f 1 log.txt
+
+Exit codes:
+    0  Success
+    1  General error
+    2  Invalid arguments or usage
+  130  Interrupted (Ctrl-C)

@@ -978,6 +978,8 @@ dependencies = [
  "clap_mangen",
  "insta",
  "jsonschema",
+ "libc",
+ "memchr",
  "miette",
  "predicates",
  "serde",
