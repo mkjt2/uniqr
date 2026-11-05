@@ -13,7 +13,7 @@ accepted. Option parsing stops at the first operand.
 Comparisons follow the locale (LC_ALL, LC_CTYPE, LANG): in a UTF-8 locale -i folds Unicode case, -s
 counts characters and -f treats Unicode blanks as separators; in the C locale they work on bytes.
 
-Usage: runiq [OPTIONS] [INPUT] [OUTPUT]
+Usage: uniqr [OPTIONS] [INPUT] [OUTPUT]
 
 Arguments:
   [INPUT]
@@ -56,11 +56,11 @@ Options:
 
 Examples:
   # Count how often each line occurs
-  $ sort cities.txt | runiq -c
+  $ sort cities.txt | uniqr -c
   # Show lines repeated in a row, ignoring case
-  $ runiq -d -i names.txt
+  $ uniqr -d -i names.txt
   # Print every repeated group, blank line after each, ignoring the first field
-  $ runiq -Dseparate -f 1 log.txt
+  $ uniqr -Dseparate -f 1 log.txt
 
 Exit codes:
     0  Success

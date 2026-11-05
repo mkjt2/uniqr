@@ -1,12 +1,12 @@
-# runiq
+# uniqr
 
 Report or filter out repeated lines in a file: a byte-for-byte compatible
 Rust clone of macOS `uniq` (Apple text_cmds-199), faster and leaner.
 
 ```sh
-sort cities.txt | runiq -c        # count how often each line occurs
-runiq -d -i names.txt             # lines repeated in a row, ignoring case
-runiq -Dseparate -f 1 log.txt     # every repeated group, blank line after each
+sort cities.txt | uniqr -c        # count how often each line occurs
+uniqr -d -i names.txt             # lines repeated in a row, ignoring case
+uniqr -Dseparate -f 1 log.txt     # every repeated group, blank line after each
 ```
 
 ## Compatibility
@@ -22,7 +22,7 @@ exit 1). Behavior that is easy to get wrong and is reproduced on purpose:
   `iswblank`, `-s` counts characters, and lines are equal when `wcscoll` says
   so. In macOS UTF-8 locales that means characters the locale's collation does
   not define are ignored: `printf 'ж\nя\n' | uniq` prints one line, and so does
-  `runiq`.
+  `uniqr`.
 - SIGPIPE is inherited (dies quietly on a closed pipe by default; reports
   `stdout: Broken pipe` and exits 1 when SIGPIPE is ignored).
 - Error messages use the name it was invoked as, so a symlink named `uniq`
@@ -30,7 +30,7 @@ exit 1). Behavior that is easy to get wrong and is reproduced on purpose:
 
 Additions: `--help`, `--version` (exact spelling only; the original rejects
 them) and the hidden `--generate man|schema|complete-<shell>`. Output is also
-flushed before every blocking read, so `tail -f log | runiq` shows lines as
+flushed before every blocking read, so `tail -f log | uniqr` shows lines as
 they arrive (the original does this only on a terminal).
 
 On Linux (static musl builds) the C and UTF-8 locales behave the same way,
@@ -44,17 +44,17 @@ tables, so non-ASCII results can differ from macOS.
   (`scripts/record_locale_cases.py`) for invalid UTF-8, legacy encodings and
   macOS collation.
 - The original's own test suite, vendored verbatim in `tests/upstream/` and
-  run against both `runiq` and `/usr/bin/uniq` (`tests/upstream.rs`).
+  run against both `uniqr` and `/usr/bin/uniq` (`tests/upstream.rs`).
 - `scripts/fuzz.py`: differential fuzzing against `/usr/bin/uniq` comparing
   stdout, stderr, exit status and output files (`scripts/fuzz.py --cases 10000`).
 - `tests/collation.rs` re-checks, against every UTF-8 locale installed, the two
-  facts runiq relies on to skip libc calls for ASCII text.
+  facts uniqr relies on to skip libc calls for ASCII text.
 
 ## Performance
 
 macOS arm64, best of 5 runs, `scripts/bench.sh` (output verified identical). 🏆 marks the better number:
 
-| Workload | Time uniq | Time runiq | Speedup | Peak footprint uniq | Peak footprint runiq |
+| Workload | Time uniq | Time uniqr | Speedup | Peak footprint uniq | Peak footprint uniqr |
 | --- | --- | --- | --- | --- | --- |
 | 3M lines, groups of 3 | 0.18 s | 0.03 s 🏆 | 6x | 1.28 MiB | 1.22 MiB 🏆 |
 | 5M unique lines, `-u` | 0.39 s | 0.06 s 🏆 | 6.5x | 1.33 MiB | 1.22 MiB 🏆 |
@@ -65,7 +65,7 @@ macOS arm64, best of 5 runs, `scripts/bench.sh` (output verified identical). �
 Memory is constant in the input size (a 16 KiB read buffer, an 8 KiB output
 buffer and a copy of the previous line). Non-ASCII text in a UTF-8 locale is
 dominated by libc's `wcscoll`, which both programs call. Maximum RSS is higher
-for runiq (about 2.0-2.3 MiB vs 1.2-1.4 MiB) because `/usr/bin/uniq` lives in
+for uniqr (about 2.0-2.3 MiB vs 1.2-1.4 MiB) because `/usr/bin/uniq` lives in
 the dyld shared cache, whose pages are not charged to the process. Any binary
 outside it starts higher (an empty C program: 1.7 MiB RSS).
 
@@ -92,18 +92,18 @@ scripts/bench.sh .
 ## Install
 
 ```sh
-curl -fsSL https://github.com/mkjt2/runiq/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/mkjt2/uniqr/releases/latest/download/install.sh | sh
 ```
 
 Prebuilt binaries for Linux (static musl) and macOS are attached to each
-[GitHub release](https://github.com/mkjt2/runiq/releases).
-From source: `cargo install --locked --git https://github.com/mkjt2/runiq`.
+[GitHub release](https://github.com/mkjt2/uniqr/releases).
+From source: `cargo install --locked --git https://github.com/mkjt2/uniqr`.
 
 ## Usage
 
 ```sh
-runiq --help              # human help, with examples and exit codes
-runiq --generate schema   # the full interface as JSON (for scripts and agents)
+uniqr --help              # human help, with examples and exit codes
+uniqr --generate schema   # the full interface as JSON (for scripts and agents)
 ```
 
 ## Development

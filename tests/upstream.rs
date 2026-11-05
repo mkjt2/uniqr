@@ -89,8 +89,8 @@ fn run_suite(binary: &Path, atf_env: bool) -> Vec<String> {
 }
 
 #[test]
-fn upstream_suite_passes_for_runiq() {
-    let failures = run_suite(Path::new(env!("CARGO_BIN_EXE_runiq")), false);
+fn upstream_suite_passes_for_uniqr() {
+    let failures = run_suite(Path::new(env!("CARGO_BIN_EXE_uniqr")), false);
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 

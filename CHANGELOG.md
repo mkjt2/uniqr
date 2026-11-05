@@ -7,7 +7,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- `runiq`: a byte-for-byte compatible clone of macOS `uniq` (text_cmds-199):
+- `uniqr`: a byte-for-byte compatible clone of macOS `uniq` (text_cmds-199):
   every option including `-D[septype]` and the obsolete `-NUM`/`+NUM`, BSD
   `getopt_long` parsing and messages, locale-aware `-f`/`-s`/`-i` and libc
   collation, NUL and missing-newline quirks, inherited SIGPIPE.

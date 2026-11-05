@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Differential fuzzer: runiq against the reference uniq (macOS /usr/bin/uniq).
+"""Differential fuzzer: uniqr against the reference uniq (macOS /usr/bin/uniq).
 
 Each case draws arguments (every flag in cli.toml, in all the syntaxes BSD
 getopt accepts, plus obsolete forms, operands and deliberate mistakes), an
 input built to hit uniq's edge cases (adjacent near-duplicates, case, blanks,
 NUL, missing final newline, non-ASCII, invalid UTF-8) and a locale. Both
-programs run with the same input, args and environment; runiq is invoked
+programs run with the same input, args and environment; uniqr is invoked
 through a symlink named `uniq` so even stderr must match byte for byte.
 Compared: stdout, stderr, exit status, and the OUTPUT file when one is given.
 
-Usage: scripts/fuzz.py [--cases N] [--seed S] [--with /usr/bin/uniq] [--bin target/release/runiq]
+Usage: scripts/fuzz.py [--cases N] [--seed S] [--with /usr/bin/uniq] [--bin target/release/uniqr]
 Prints the seed; a mismatch is shrunk and printed as a reproducible case.
 """
 import argparse
@@ -108,7 +108,7 @@ def gen_args(r):
                                   "-c-", "-:", "--help", "--version", "-h", "--=x"]))
     if shorts:
         args.insert(r.randrange(len(args) + 1), "-" + "".join(shorts))
-    # Help/version are runiq extensions; the original rejects them.
+    # Help/version are uniqr extensions; the original rejects them.
     args = [a for a in args if a not in ("--help", "--version")]
     operands = []
     roll = r.random()
@@ -181,13 +181,13 @@ def main():
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--with", dest="ref", default="/usr/bin/uniq")
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    ap.add_argument("--bin", default=os.path.join(root, "target", "release", "runiq"))
+    ap.add_argument("--bin", default=os.path.join(root, "target", "release", "uniqr"))
     a = ap.parse_args()
     seed = a.seed if a.seed is not None else random.randrange(1 << 32)
     print(f"seed {seed}, {a.cases} cases", flush=True)
     r = random.Random(seed)
 
-    tmp = tempfile.mkdtemp(prefix="runiq-fuzz-")
+    tmp = tempfile.mkdtemp(prefix="uniqr-fuzz-")
     links = {}
     for name, target in (("ref", a.ref), ("new", a.bin)):
         d = os.path.join(tmp, name)
@@ -210,7 +210,7 @@ def main():
             new = run(links["new"], args, data, locale, work)
             print(f"MISMATCH #{mismatches} (case {n}): LC_ALL={locale} args={args!r} stdin={data!r}")
             print(f"  uniq : {ref!r}")
-            print(f"  runiq: {new!r}", flush=True)
+            print(f"  uniqr: {new!r}", flush=True)
             if mismatches >= 10:
                 break
     shutil.rmtree(tmp, ignore_errors=True)

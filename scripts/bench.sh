@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compare runiq with the reference uniq: wall time (best of N), max RSS and
+# Compare uniqr with the reference uniq: wall time (best of N), max RSS and
 # peak memory footprint (macOS /usr/bin/time -l), and identical output.
 #
 # Usage: scripts/bench.sh DATA_DIR [RUNS]
@@ -10,7 +10,7 @@ set -euo pipefail
 dir=${1:?usage: scripts/bench.sh DATA_DIR [RUNS]}
 runs=${2:-5}
 ref=${REF:-/usr/bin/uniq}
-new=${NEW:-$(cd "$(dirname "$0")/.." && pwd)/target/release/runiq}
+new=${NEW:-$(cd "$(dirname "$0")/.." && pwd)/target/release/uniqr}
 export LANG=${LANG:-en_US.UTF-8}
 
 # name|file|args
@@ -40,8 +40,8 @@ measure() { # bin file args... -> "seconds maxrss footprint"
   echo "$best $rss $foot"
 }
 
-printf '%-28s %9s %9s %7s  %9s %9s  %9s %9s  %s\n' case "uniq s" "runiq s" speedup \
-  "uniq RSS" "runiq RSS" "uniq foot" "runiq foot" output
+printf '%-28s %9s %9s %7s  %9s %9s  %9s %9s  %s\n' case "uniq s" "uniqr s" speedup \
+  "uniq RSS" "uniqr RSS" "uniq foot" "uniqr foot" output
 for c in "${CASES[@]}"; do
   IFS='|' read -r name file args <<<"$c"
   [[ $file == /* ]] || file="$dir/$file"

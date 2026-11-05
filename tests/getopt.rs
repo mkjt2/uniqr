@@ -7,7 +7,7 @@ mod common;
 use std::path::Path;
 use std::process::Output;
 
-const USAGE: &str = "usage: runiq [-cdiu] [-D[septype]] [-f fields] [-s chars] [input [output]]\n";
+const USAGE: &str = "usage: uniqr [-cdiu] [-D[septype]] [-f fields] [-s chars] [input [output]]\n";
 const AB: &str = "a\na\nb\nb\n";
 
 fn run_in(dir: &Path, args: &[&str], stdin: &str) -> Output {
@@ -46,7 +46,7 @@ fn fails(args: &[&str], stderr: &str) {
 }
 
 fn usage_with(message: &str) -> String {
-    format!("runiq: {message}\n{USAGE}")
+    format!("uniqr: {message}\n{USAGE}")
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn short_options_cluster_and_take_attached_or_separate_values() {
     // "-0" is rewritten to "-f0" before getopt runs, then taken as -s's value.
     fails(
         &["-s", "-0"],
-        "runiq: character skip value is invalid: -f0\n",
+        "uniqr: character skip value is invalid: -f0\n",
     );
     fails(&["-cf"], &usage_with("option requires an argument -- f"));
     fails(&["-s"], &usage_with("option requires an argument -- s"));
@@ -78,11 +78,11 @@ fn all_repeated_value_must_be_attached_and_is_case_insensitive() {
     // A separate word is an operand, never the value.
     fails(
         &["-D", "separate"],
-        "runiq: separate: No such file or directory\n",
+        "uniqr: separate: No such file or directory\n",
     );
     fails(
         &["--all-repeated", "prepend"],
-        "runiq: prepend: No such file or directory\n",
+        "uniqr: prepend: No such file or directory\n",
     );
 }
 
@@ -163,8 +163,8 @@ fn operands_end_option_parsing() {
         "x\n"
     );
 
-    fails(&["--", "-c"], "runiq: -c: No such file or directory\n");
-    fails(&["-c", "+"], "runiq: +: No such file or directory\n");
+    fails(&["--", "-c"], "uniqr: -c: No such file or directory\n");
+    fails(&["-c", "+"], "uniqr: +: No such file or directory\n");
     assert_eq!(ok(&["--"], "a\na\n"), "a\n");
     assert_eq!(ok(&["-c", "--", "-"], "a\na\n"), "   2 a\n");
     assert_eq!(ok(&["--count", "--"], "a\na\n"), "   2 a\n");
@@ -177,14 +177,14 @@ fn obsolete_number_forms() {
     assert_eq!(ok(&["-1", "-c"], "a b\nc b\n"), "   2 a b\n");
     assert_eq!(ok(&["+1", "-c"], "ab\ncb\n"), "   2 ab\n");
     fails(&["-c1"], &usage_with("invalid option -- 1"));
-    fails(&["-1x"], "runiq: field skip value is invalid: 1x\n");
+    fails(&["-1x"], "uniqr: field skip value is invalid: 1x\n");
     fails(
         &["-c", "+1x"],
-        "runiq: character skip value is invalid: 1x\n",
+        "uniqr: character skip value is invalid: 1x\n",
     );
     // The rewrite also hits option values before the first operand...
-    fails(&["-f", "-1"], "runiq: field skip value is invalid: -f1\n");
-    fails(&["-f", "+5"], "runiq: field skip value is invalid: -s5\n");
+    fails(&["-f", "-1"], "uniqr: field skip value is invalid: -f1\n");
+    fails(&["-f", "+5"], "uniqr: field skip value is invalid: -s5\n");
     // ...and stops at the first word that is not an option.
     fails(&["-f", "3", "-1"], &usage_with("invalid option -- 1"));
 }
@@ -199,33 +199,33 @@ fn skip_values_follow_strtonum() {
         "   2 xa\n"
     );
     assert_eq!(ok(&["-s", "2147483647"], "x\n"), "x\n");
-    fails(&["-f", "abc"], "runiq: field skip value is invalid: abc\n");
-    fails(&["-f", ""], "runiq: field skip value is invalid: \n");
-    fails(&["-f", "5 "], "runiq: field skip value is invalid: 5 \n");
+    fails(&["-f", "abc"], "uniqr: field skip value is invalid: abc\n");
+    fails(&["-f", ""], "uniqr: field skip value is invalid: \n");
+    fails(&["-f", "5 "], "uniqr: field skip value is invalid: 5 \n");
     fails(
         &["-s", "0x3"],
-        "runiq: character skip value is invalid: 0x3\n",
+        "uniqr: character skip value is invalid: 0x3\n",
     );
-    fails(&["-s", "-"], "runiq: character skip value is invalid: -\n");
+    fails(&["-s", "-"], "uniqr: character skip value is invalid: -\n");
     fails(
         &["-f", " -5"],
-        "runiq: field skip value is too small:  -5\n",
+        "uniqr: field skip value is too small:  -5\n",
     );
     fails(
         &["-s", "2147483648"],
-        "runiq: character skip value is too large: 2147483648\n",
+        "uniqr: character skip value is too large: 2147483648\n",
     );
     fails(
         &["-s", "99999999999999999999"],
-        "runiq: character skip value is too large: 99999999999999999999\n",
+        "uniqr: character skip value is too large: 99999999999999999999\n",
     );
     fails(
         &["-s", " -99999999999999999999"],
-        "runiq: character skip value is too small:  -99999999999999999999\n",
+        "uniqr: character skip value is too small:  -99999999999999999999\n",
     );
     fails(
         &["-s", "-99999999999999999999"],
-        "runiq: character skip value is invalid: -f99999999999999999999\n",
+        "uniqr: character skip value is invalid: -f99999999999999999999\n",
     );
 }
 
@@ -233,13 +233,13 @@ fn skip_values_follow_strtonum() {
 fn errors_are_reported_in_argument_order() {
     fails(
         &["-f", "abc", "-x"],
-        "runiq: field skip value is invalid: abc\n",
+        "uniqr: field skip value is invalid: abc\n",
     );
     fails(&["-x", "-f", "abc"], &usage_with("invalid option -- x"));
     fails(&["-Dbad", "-f", "abc"], USAGE);
     fails(
         &["-f", "abc", "a", "b", "c"],
-        "runiq: field skip value is invalid: abc\n",
+        "uniqr: field skip value is invalid: abc\n",
     );
 }
 
@@ -256,19 +256,19 @@ fn last_value_wins() {
 fn help_and_version_are_long_only_extensions() {
     let help = ok(&["--help"], "");
     assert!(
-        help.contains("Usage: runiq [OPTIONS] [INPUT] [OUTPUT]"),
+        help.contains("Usage: uniqr [OPTIONS] [INPUT] [OUTPUT]"),
         "{help}"
     );
     fails(&["--hel"], &usage_with("unrecognized option `--hel'"));
-    assert!(ok(&["--version"], "").starts_with("runiq "));
-    assert!(ok(&["-c", "--version"], "").starts_with("runiq "));
+    assert!(ok(&["--version"], "").starts_with("uniqr "));
+    assert!(ok(&["-c", "--version"], "").starts_with("uniqr "));
 }
 
 #[test]
 fn messages_use_the_invoked_program_name() {
     let dir = tempfile::tempdir().unwrap();
     let link = dir.path().join("uniq");
-    std::os::unix::fs::symlink(assert_cmd::cargo::cargo_bin!("runiq"), &link).unwrap();
+    std::os::unix::fs::symlink(assert_cmd::cargo::cargo_bin!("uniqr"), &link).unwrap();
     let out = std::process::Command::new(&link)
         .current_dir(dir.path())
         .env_remove("POSIXLY_CORRECT")

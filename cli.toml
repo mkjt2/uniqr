@@ -9,7 +9,7 @@
 schema_version = 1
 
 [cli]
-name = "runiq"
+name = "uniqr"
 about = "Report or filter out repeated lines in a file"
 long_about = """Read INPUT (or standard input), compare adjacent lines, and write one copy of \
 each run of identical lines to OUTPUT (or standard output). Repeated lines are only \
@@ -23,9 +23,9 @@ Comparisons follow the locale (LC_ALL, LC_CTYPE, LANG): in a UTF-8 locale -i fol
 case, -s counts characters and -f treats Unicode blanks as separators; in the C locale they \
 work on bytes."""
 examples = [
-  { cmd = "sort cities.txt | runiq -c", description = "Count how often each line occurs" },
-  { cmd = "runiq -d -i names.txt", description = "Show lines repeated in a row, ignoring case" },
-  { cmd = "runiq -Dseparate -f 1 log.txt", description = "Print every repeated group, blank line after each, ignoring the first field" },
+  { cmd = "sort cities.txt | uniqr -c", description = "Count how often each line occurs" },
+  { cmd = "uniqr -d -i names.txt", description = "Show lines repeated in a row, ignoring case" },
+  { cmd = "uniqr -Dseparate -f 1 log.txt", description = "Print every repeated group, blank line after each, ignoring the first field" },
 ]
 notes = """A byte-for-byte clone of macOS /usr/bin/uniq (Apple text_cmds, FreeBSD-derived), \
 so the original's observable behavior is the spec. Overrides of cli-maker defaults, all for \
@@ -40,7 +40,7 @@ the original prints), followed by `usage: <progname> [-cdiu] [-D[septype]] [-f f
 - Usage errors exit 1, like the original (not cli-maker's 2). cli.toml cannot declare this \
 (usage is always 2 there), so the code below documents it: argv goes through a BSD \
 getopt_long emulator before clap. The emulator implements: stop at the first operand \
-(`runiq in.txt -c` writes to a file named -c); `--` ends options; clustered shorts \
+(`uniqr in.txt -c` writes to a file named -c); `--` ends options; clustered shorts \
 (-cdu, -cf3); short values attached or separate; -D takes a value only when attached \
 (-Dprepend) and --all-repeated only with = (a separate word is an operand); septype \
 matched case-insensitively; unique-prefix long abbreviations (--cou); the obsolete -NUM \
@@ -64,7 +64,7 @@ towlower. If both lines fail to decode they are compared as raw bytes ignoring -
 if only one fails they differ. Lines are equal when wcscoll(3) says so, as in the \
 original. On macOS that is not byte equality: characters the LC_COLLATE table does not \
 define are ignored (en_US.UTF-8: `ж` equals `я`, `aж` equals `a`, even without -i). \
-runiq asks libc's wcscoll whenever the answer could differ from byte equality and only \
+uniqr asks libc's wcscoll whenever the answer could differ from byte equality and only \
 skips it when it provably cannot (identical keys; C/POSIX collation; two different \
 all-ASCII keys under a UTF-8 or C collation, which tests/collation.rs re-verifies \
 against every UTF-8 locale the system ships). Without -f/-s/-i, setlocale itself is \
@@ -77,14 +77,14 @@ there can differ from macOS (e.g. `ж`/`я` stay distinct).
 dies quietly on a closed pipe, like the original; if the caller ignores SIGPIPE, the write \
 error is reported as `<progname>: stdout: Broken pipe` (or the OUTPUT name) with exit 1. \
 Other write errors are reported the same way. The original only notices write errors when \
-it flushes at exit; runiq stops at the first failed write (same message and status).
+it flushes at exit; uniqr stops at the first failed write (same message and status).
 - Pending output is flushed before every blocking read of the input, so interactive and \
-pipeline use (`tail -f log | runiq`) sees each line promptly. The original only does this \
+pipeline use (`tail -f log | uniqr`) sees each line promptly. The original only does this \
 when stdout is a terminal or under ATF; the bytes written are identical.
 - Parity is also checked by the original's own test suite: Apple text_cmds-199 \
 uniq/tests/uniq_test.sh (FreeBSD's, Klara 2024) is vendored verbatim in tests/upstream/ \
 and run by tests/upstream.rs through a small ATF shim, against both /usr/bin/uniq (to \
-validate the shim, macOS only) and runiq (invoked through a symlink named uniq).
+validate the shim, macOS only) and uniqr (invoked through a symlink named uniq).
 - Performance target: at least as fast as the original and no more memory (peak footprint) \
 on large inputs; streaming with constant memory: a 16 KiB input buffer (grown only for a \
 longer line), an 8 KiB output buffer and a copy of the previous line.
@@ -112,7 +112,7 @@ color = false       # --color (automatic color and NO_COLOR work without it)
 prompts = false     # confirmation prompts, --no-input, exit code 4
 verbosity = false   # -v/-q (logging and RUST_LOG work without it)
 
-# Exit codes 0 (ok), 1 (error, including invalid usage) are what runiq returns.
+# Exit codes 0 (ok), 1 (error, including invalid usage) are what uniqr returns.
 # 2 (usage) is cli-maker's built-in and is never produced (see [cli].notes).
 
 [[env]]
@@ -129,7 +129,7 @@ description = "Default locale when LC_ALL and LC_CTYPE are unset"
 
 [[env]]
 name = "RUST_LOG"
-description = "Override log filtering (e.g. debug, runiq=trace)"
+description = "Override log filtering (e.g. debug, uniqr=trace)"
 
 # ---------------------------------------------------------------------------
 # Operands

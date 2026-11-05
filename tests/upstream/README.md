@@ -10,6 +10,6 @@ It is an [ATF](https://github.com/freebsd/atf) shell suite. macOS has no
 `atf-sh`/`kyua`, so `atf_shim.sh` implements the subset it uses (`atf_check`
 with `-o`/`-e`/`-s`, `atf_set`, `atf_test_case`, `atf_add_test_case`).
 `tests/upstream.rs` runs every test case in its own temporary directory and
-process group with a `uniq` on `PATH` that is either runiq (through a symlink
+process group with a `uniq` on `PATH` that is either uniqr (through a symlink
 named `uniq`, so messages say `uniq:`) or, on macOS, `/usr/bin/uniq` itself,
 which validates the shim against the original.

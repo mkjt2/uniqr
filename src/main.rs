@@ -1,9 +1,9 @@
-//! Process entry point: wires real stdio into `runiq::run`.
+//! Process entry point: wires real stdio into `uniqr::run`.
 //!
 //! `no_main` keeps the Rust runtime's startup out of the way. That startup
 //! sets SIGPIPE to "ignore"; macOS uniq inherits whatever disposition its
 //! parent gave it, so with the default it dies quietly on a closed pipe
-//! (`runiq big | head`), and with SIGPIPE ignored it reports
+//! (`uniqr big | head`), and with SIGPIPE ignored it reports
 //! `stdout: Broken pipe` and exits 1. argv comes straight from C `main`.
 // The test build keeps libtest's own main.
 #![cfg_attr(not(test), no_main)]
@@ -32,15 +32,15 @@ extern "C" fn main(argc: std::ffi::c_int, argv: *const *const std::ffi::c_char) 
     let mut err = std::io::stderr().lock();
     let mut input = std::io::stdin().lock();
     let env = |key: &str| std::env::var(key).ok();
-    let code = runiq::run(
+    let code = uniqr::run(
         args,
-        runiq::Io {
+        uniqr::Io {
             out: &mut out,
             err: &mut err,
             input: &mut input,
-            term: runiq::ctx::Terminal::detect(),
+            term: uniqr::ctx::Terminal::detect(),
             env: &env,
         },
     );
-    runiq::flush_stdout(&mut out, &mut err, code)
+    uniqr::flush_stdout(&mut out, &mut err, code)
 }

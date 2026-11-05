@@ -37,7 +37,7 @@ enum HasArg {
 }
 
 /// `long_opts` in uniq.c, in its order (the order matters for abbreviation
-/// ambiguity), plus runiq's --help and --version.
+/// ambiguity), plus uniqr's --help and --version.
 const LONG: &[(&str, HasArg, u8)] = &[
     ("all-repeated", HasArg::Optional, b'D'),
     ("count", HasArg::No, b'c'),
@@ -210,7 +210,7 @@ fn long_option(
             break;
         }
         if matches!(*val, b'H' | b'V') {
-            // runiq's extensions match only when spelled out, so every
+            // uniqr's extensions match only when spelled out, so every
             // abbreviation behaves exactly as in the original.
             continue;
         }

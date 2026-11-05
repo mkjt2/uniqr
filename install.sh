@@ -1,17 +1,17 @@
 #!/bin/sh
-# Install runiq from GitHub Releases.
+# Install uniqr from GitHub Releases.
 #
-#   curl -fsSL https://github.com/mkjt2/runiq/releases/latest/download/install.sh | sh
+#   curl -fsSL https://github.com/mkjt2/uniqr/releases/latest/download/install.sh | sh
 #
 # Environment:
-#   RUNIQ_VERSION      version to install (default: latest)
-#   RUNIQ_INSTALL_DIR  install directory (default: ~/.local/bin)
+#   UNIQR_VERSION      version to install (default: latest)
+#   UNIQR_INSTALL_DIR  install directory (default: ~/.local/bin)
 set -eu
 
-REPO="mkjt2/runiq"
-NAME="runiq"
-VERSION="${RUNIQ_VERSION:-latest}"
-INSTALL_DIR="${RUNIQ_INSTALL_DIR:-$HOME/.local/bin}"
+REPO="mkjt2/uniqr"
+NAME="uniqr"
+VERSION="${UNIQR_VERSION:-latest}"
+INSTALL_DIR="${UNIQR_INSTALL_DIR:-$HOME/.local/bin}"
 
 die() { echo "install: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "requires $1"; }

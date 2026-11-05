@@ -7,8 +7,8 @@ use std::os::unix::process::ExitStatusExt;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-fn runiq() -> Command {
-    let mut c = Command::new(env!("CARGO_BIN_EXE_runiq"));
+fn uniqr() -> Command {
+    let mut c = Command::new(env!("CARGO_BIN_EXE_uniqr"));
     c.env("LC_ALL", "C");
     c
 }
@@ -23,7 +23,7 @@ fn many_lines() -> Vec<u8> {
 #[test]
 fn closed_pipe_kills_quietly_by_default() {
     // std::process::Command restores SIGPIPE to its default in the child.
-    let mut child = runiq()
+    let mut child = uniqr()
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -52,7 +52,7 @@ fn closed_pipe_with_sigpipe_ignored_is_an_error() {
         .arg("-c")
         .arg(format!(
             "trap '' PIPE; '{}' <\"$0\" 2>err | true; cat err >&2",
-            env!("CARGO_BIN_EXE_runiq")
+            env!("CARGO_BIN_EXE_uniqr")
         ))
         .arg(write_temp(&many_lines()))
         .current_dir(dir.path())
@@ -61,7 +61,7 @@ fn closed_pipe_with_sigpipe_ignored_is_an_error() {
         .unwrap();
     assert_eq!(
         String::from_utf8_lossy(&out.stderr),
-        "runiq: stdout: Broken pipe\n"
+        "uniqr: stdout: Broken pipe\n"
     );
 }
 
@@ -69,7 +69,7 @@ fn closed_pipe_with_sigpipe_ignored_is_an_error() {
 fn write_error_on_output_file_names_the_file() {
     let script = format!(
         "trap '' PIPE; mkfifo f; (head -c 1 f >/dev/null) & '{}' \"$0\" f 2>err; echo $? >code; cat err",
-        env!("CARGO_BIN_EXE_runiq")
+        env!("CARGO_BIN_EXE_uniqr")
     );
     let dir = tempfile::tempdir().unwrap();
     let input = write_temp(&many_lines());
@@ -85,13 +85,13 @@ fn write_error_on_output_file_names_the_file() {
     assert_eq!(code.trim(), "1");
     assert_eq!(
         String::from_utf8_lossy(&out.stdout),
-        "runiq: f: Broken pipe\n"
+        "uniqr: f: Broken pipe\n"
     );
 }
 
 #[test]
 fn output_is_flushed_before_waiting_for_input() {
-    let mut child = runiq()
+    let mut child = uniqr()
         .args(["-d"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

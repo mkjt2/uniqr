@@ -4,7 +4,7 @@
 cli.toml [[case]]s are TOML strings, so they cannot carry invalid UTF-8 or
 other encodings. These cases can: each is run through the reference command
 (macOS /usr/bin/uniq by default) and written to tests/data/locale_cases.rs as
-literal byte expectations, which tests/locale.rs checks runiq against.
+literal byte expectations, which tests/locale.rs checks uniqr against.
 
 Usage: scripts/record_locale_cases.py [--with /usr/bin/uniq]
 Re-run after editing CASES and review the diff.

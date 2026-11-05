@@ -9,9 +9,9 @@ mod common;
 
 use clap::{ArgAction, CommandFactory};
 use common::spec::{Arg, Flag, FlagKind, Spec};
-use runiq::cli::Cli;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use uniqr::cli::Cli;
 
 fn kind_of(arg: &clap::Arg) -> Option<FlagKind> {
     match arg.get_action() {
@@ -320,7 +320,7 @@ fn cli_name_matches_package() {
 #[test]
 fn error_catalog_matches_exit_codes() {
     let declared = common::spec().error_catalog();
-    let code: BTreeSet<(String, i32)> = runiq::error::EXIT_CODES
+    let code: BTreeSet<(String, i32)> = uniqr::error::EXIT_CODES
         .iter()
         .map(|(n, c)| ((*n).to_string(), *c))
         .collect();
@@ -335,14 +335,14 @@ fn error_catalog_matches_exit_codes() {
 fn final_command_is_consistent() {
     // Panics on clashes clap can't resolve, e.g. a flag using -h while
     // `help_flags` still claims it.
-    runiq::cli::command().debug_assert();
+    uniqr::cli::command().debug_assert();
 }
 
 #[test]
 fn help_and_version_flags_match_cli_toml() {
     use common::spec::split_flags;
     let spec = common::spec();
-    let cmd = runiq::cli::command();
+    let cmd = uniqr::cli::command();
     for (id, flags, auto) in [
         ("help", &spec.cli.help_flags, ["-h", "--help"]),
         ("version", &spec.cli.version_flags, ["-V", "--version"]),
@@ -365,7 +365,7 @@ fn help_and_version_flags_match_cli_toml() {
 
 #[test]
 fn every_flag_and_command_has_help_text_applied() {
-    let cmd = runiq::cli::command();
+    let cmd = uniqr::cli::command();
     fn walk(cmd: &clap::Command, path: &str, problems: &mut Vec<String>) {
         if cmd.get_about().is_none() {
             problems.push(format!("`{path}` has no about"));
@@ -386,7 +386,7 @@ fn every_flag_and_command_has_help_text_applied() {
 
 #[test]
 fn build_time_tables_match_cli_toml() {
-    use runiq::generated as g;
+    use uniqr::generated as g;
     let spec = common::spec();
     assert_eq!(g::NAME, spec.cli.name);
     assert_eq!(g::ABOUT, spec.cli.about);

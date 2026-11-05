@@ -171,7 +171,7 @@ fn missing_input_is_reported_before_output_is_touched() {
     assert_eq!(out.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&out.stderr),
-        "runiq: nofile: No such file or directory\n"
+        "uniqr: nofile: No such file or directory\n"
     );
     assert!(!dir.path().join("out.txt").exists());
 }
@@ -187,7 +187,7 @@ fn unreadable_input_and_unwritable_output() {
     assert_eq!(out.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&out.stderr),
-        "runiq: .: Is a directory\n"
+        "uniqr: .: Is a directory\n"
     );
 
     let out = common::cmd(dir.path())
@@ -199,6 +199,6 @@ fn unreadable_input_and_unwritable_output() {
     assert_eq!(out.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&out.stderr),
-        "runiq: no/dir/out: No such file or directory\n"
+        "uniqr: no/dir/out: No such file or directory\n"
     );
 }

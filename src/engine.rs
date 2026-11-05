@@ -5,7 +5,7 @@
 //! only moved to the front of the buffer, together with the partial current
 //! line, when the buffer is refilled). Output is collected in a buffer that is
 //! written out when full and before every read of the input, so a slow
-//! producer (`tail -f log | runiq`) sees each line promptly.
+//! producer (`tail -f log | uniqr`) sees each line promptly.
 //!
 //! The output state machine is a transcription of Apple text_cmds uniq.c
 //! `main()`, including its odd flag interactions (`-du`, `-cD`, `-uD`).
