@@ -64,6 +64,6 @@ Examples:
 
 Exit codes:
     0  Success
-    1  General error
-    2  Invalid arguments or usage
+    1  Error, including invalid options or operands
+    2  Invalid --generate target
   130  Interrupted (Ctrl-C)

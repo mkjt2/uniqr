@@ -48,7 +48,7 @@ and +NUM rewrite (applied to every word before the first operand or --, even opt
 values, as the original does: `-f -1` means -f with value -f1, an error); strtonum(3) \
 range checks for -f/-s (0..=2147483647, leading blanks and a sign allowed, nothing \
 trailing). It then hands clap a canonical argv, so clap never sees invalid input and \
-exit code 2 is never produced.
+usage errors exit 1 as in the original (only a bad target for the hidden --generate exits 2).
 - help_flags = [--help], version_flags = [--version]: extensions the original lacks \
 (it rejects them as unrecognized options); long-only so no short letter is taken.
 - Last option wins for -D/-f/-s; -D overrides -d; -d with -u, -c with -D and other odd \
@@ -112,8 +112,17 @@ color = false       # --color (automatic color and NO_COLOR work without it)
 prompts = false     # confirmation prompts, --no-input, exit code 4
 verbosity = false   # -v/-q (logging and RUST_LOG work without it)
 
-# Exit codes 0 (ok), 1 (error, including invalid usage) are what uniqr returns.
-# 2 (usage) is cli-maker's built-in and is never produced (see [cli].notes).
+# Usage errors exit 1, as in the original; these replace the built-in wording,
+# which would document exit 2 for them.
+[[exit_code]]
+code = 1
+name = "error"
+description = "Error, including invalid options or operands"
+
+[[exit_code]]
+code = 2
+name = "usage"
+description = "Invalid --generate target"
 
 [[env]]
 name = "LC_ALL"

@@ -30,7 +30,7 @@ CASES = [
     ("utf8-fold-dotted-i", U8, ["-ic"], "İ\ni\nI\n".encode(), True),
     ("utf8-fold-kelvin-to-ascii", U8, ["-ic"], "K\nk\nK\n".encode(), True),
     ("utf8-fold-greek", U8, ["-ic"], "Σ\nσ\nς\n".encode(), False),
-    ("utf8-fold-cyrillic", U8, ["-ic"], "Ж\nж\nя\nЯ\n".encode(), True),
+    ("utf8-fold-cyrillic", U8, ["-ic"], "Ж\nж\nя\nЯ\n".encode(), False),
     ("utf8-nfc-vs-nfd", U8, ["-c"], "é\né\n".encode(), True),
     ("utf8-skip-chars-counts-chars", U8, ["-s1", "-c"], "éx\nax\n😀x\n".encode(), True),
     ("utf8-skip-chars-past-end", U8, ["-s9", "-c"], "é\nab\n".encode(), True),

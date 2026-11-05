@@ -61,7 +61,13 @@ fn locale_categories_resolve_like_setlocale() {
     assert_eq!(run(&[("LANG", "en_US.UTF-8")]), folded);
     assert_eq!(run(&[("LANG", "C"), ("LC_CTYPE", "en_US.UTF-8")]), folded);
     assert_eq!(run(&[("LANG", "en_US.UTF-8"), ("LC_ALL", "C")]), unfolded);
-    assert_eq!(run(&[]), unfolded);
+    // With no locale variables, setlocale picks C; musl's default is C.UTF-8.
+    let default = if cfg!(target_env = "musl") {
+        folded
+    } else {
+        unfolded
+    };
+    assert_eq!(run(&[]), default);
 }
 
 /// Collation follows LC_COLLATE, decoding follows LC_CTYPE (macOS values).

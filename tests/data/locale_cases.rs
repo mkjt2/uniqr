@@ -90,7 +90,7 @@ pub const CASES: &[Case] = &[
         b"\xd0\x96\n\xd0\xb6\n\xd1\x8f\n\xd0\xaf\n",
         b"   4 \xd0\x96\n",
         0,
-        true,
+        false,
     ),
     (
         "utf8-nfc-vs-nfd",
