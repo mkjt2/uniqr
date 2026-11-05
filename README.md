@@ -52,15 +52,15 @@ tables, so non-ASCII results can differ from macOS.
 
 ## Performance
 
-macOS arm64, best of 5 runs, `scripts/bench.sh` (output verified identical):
+macOS arm64, best of 5 runs, `scripts/bench.sh` (output verified identical). 🏆 marks the better number:
 
-| Workload | uniq | runiq | Speedup | Peak footprint uniq / runiq |
-| --- | --- | --- | --- | --- |
-| 3M lines, groups of 3 | 0.18 s | 0.03 s | 6x | 1.28 / 1.22 MiB |
-| 5M unique lines, `-u` | 0.39 s | 0.06 s | 6.5x | 1.33 / 1.22 MiB |
-| 3M lines, `-f 1 -c` | 0.41 s | 0.07 s | 5.9x | 1.33 / 1.22 MiB |
-| 2M UTF-8 lines, `-c` | 0.99 s | 0.82 s | 1.2x | 1.38 / 1.38 MiB |
-| 2M UTF-8 lines, `-i -f 1 -c` | 1.20 s | 1.14 s | 1.1x | 1.42 / 1.38 MiB |
+| Workload | Time uniq | Time runiq | Speedup | Peak footprint uniq | Peak footprint runiq |
+| --- | --- | --- | --- | --- | --- |
+| 3M lines, groups of 3 | 0.18 s | 0.03 s 🏆 | 6x | 1.28 MiB | 1.22 MiB 🏆 |
+| 5M unique lines, `-u` | 0.39 s | 0.06 s 🏆 | 6.5x | 1.33 MiB | 1.22 MiB 🏆 |
+| 3M lines, `-f 1 -c` | 0.41 s | 0.07 s 🏆 | 5.9x | 1.33 MiB | 1.22 MiB 🏆 |
+| 2M UTF-8 lines, `-c` | 0.99 s | 0.82 s 🏆 | 1.2x | 1.38 MiB | 1.38 MiB (tie) |
+| 2M UTF-8 lines, `-i -f 1 -c` | 1.20 s | 1.14 s 🏆 | 1.1x | 1.42 MiB | 1.38 MiB 🏆 |
 
 Memory is constant in the input size (a 16 KiB read buffer, an 8 KiB output
 buffer and a copy of the previous line). Non-ASCII text in a UTF-8 locale is
