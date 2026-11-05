@@ -1,0 +1,596 @@
+# cli.toml: the source of truth for this CLI's interface.
+#
+# All user-facing text (about, help, examples) lives here. build.rs renders it
+# into the binary at compile time, where it is applied to the clap definitions;
+# the binary never parses this file. A conformance test (tests/conformance.rs)
+# fails if src/cli.rs and this file disagree on structure.
+#
+# Schema reference: the cli-maker plugin, skills/design/references/cli-toml.md
+schema_version = 1
+
+[cli]
+name = "runiq"
+about = "Report or filter out repeated lines in a file"
+long_about = """Read INPUT (or standard input), compare adjacent lines, and write one copy of \
+each run of identical lines to OUTPUT (or standard output). Repeated lines are only \
+detected when they are adjacent, so sort the input first to find all duplicates.
+
+A drop-in clone of macOS uniq: the same options, the same output byte for byte, the same \
+error messages and exit status. The obsolete forms -NUM (same as -f NUM) and +NUM (same as \
+-s NUM) are accepted. Option parsing stops at the first operand.
+
+Comparisons follow the locale (LC_ALL, LC_CTYPE, LANG): in a UTF-8 locale -i folds Unicode \
+case, -s counts characters and -f treats Unicode blanks as separators; in the C locale they \
+work on bytes."""
+examples = [
+  { cmd = "sort cities.txt | runiq -c", description = "Count how often each line occurs" },
+  { cmd = "runiq -d -i names.txt", description = "Show lines repeated in a row, ignoring case" },
+  { cmd = "runiq -Dseparate -f 1 log.txt", description = "Print every repeated group, blank line after each, ignoring the first field" },
+]
+notes = """A byte-for-byte clone of macOS /usr/bin/uniq (Apple text_cmds, FreeBSD-derived), \
+so the original's observable behavior is the spec. Overrides of cli-maker defaults, all for \
+compatibility:
+- Single command with operands [INPUT [OUTPUT]], like the original.
+- No --json/--color/--no-input/-v/-q kits: the output is the data and the interface must \
+match uniq.
+- error_style = plain. Messages follow BSD err(3)/getopt_long(3): `<progname>: <message>`, \
+where progname is the basename of argv[0] (so a symlink named `uniq` prints exactly what \
+the original prints), followed by `usage: <progname> [-cdiu] [-D[septype]] [-f fields] \
+[-s chars] [input [output]]` for usage errors.
+- Usage errors exit 1, like the original (not cli-maker's 2). cli.toml cannot declare this \
+(usage is always 2 there), so the code below documents it: argv goes through a BSD \
+getopt_long emulator before clap. The emulator implements: stop at the first operand \
+(`runiq in.txt -c` writes to a file named -c); `--` ends options; clustered shorts \
+(-cdu, -cf3); short values attached or separate; -D takes a value only when attached \
+(-Dprepend) and --all-repeated only with = (a separate word is an operand); septype \
+matched case-insensitively; unique-prefix long abbreviations (--cou); the obsolete -NUM \
+and +NUM rewrite (applied to every word before the first operand or --, even option \
+values, as the original does: `-f -1` means -f with value -f1, an error); strtonum(3) \
+range checks for -f/-s (0..=2147483647, leading blanks and a sign allowed, nothing \
+trailing). It then hands clap a canonical argv, so clap never sees invalid input and \
+exit code 2 is never produced.
+- help_flags = [--help], version_flags = [--version]: extensions the original lacks \
+(it rejects them as unrecognized options); long-only so no short letter is taken.
+- Last option wins for -D/-f/-s; -D overrides -d; -d with -u, -c with -D and other odd \
+combinations behave exactly as the original's state machine (see the cases).
+- Output quirks kept: a line is written up to its first NUL byte (C string semantics, so \
+the newline after a NUL is lost); the last line is written without a newline if it had \
+none; -c pads counts to 4 columns (%4lld).
+- Comparison: lines are compared after dropping everything from the first NUL and a \
+trailing newline. The key is decoded in the current locale (setlocale(LC_ALL, "") through \
+libc, so an invalid locale name falls back to C exactly like the original); -f skips \
+fields (runs of blanks then non-blanks, iswblank), -s skips characters, -i applies \
+towlower. If both lines fail to decode they are compared as raw bytes ignoring -f/-s/-i; \
+if only one fails they differ. Equality is exact (wcscmp), as macOS wcscoll is in \
+multibyte locales; collation equivalence in single-byte locales is not emulated.
+- Case folding and blank classes come from libc (towlower/iswblank), so on macOS they \
+match the original exactly; Linux (static musl) uses musl's Unicode tables, which can \
+differ for a few characters, and only knows the C and UTF-8 encodings.
+- SIGPIPE disposition is inherited, not reset by the Rust runtime: by default the process \
+dies quietly on a closed pipe, like the original; if the caller ignores SIGPIPE, the write \
+error is reported as `<progname>: stdout: Broken pipe` (or the OUTPUT name) with exit 1. \
+Other write errors are reported the same way. The original only notices write errors when \
+it flushes at exit; runiq stops at the first failed write (same message and status).
+- Pending output is flushed before every blocking read of the input, so interactive and \
+pipeline use (`tail -f log | runiq`) sees each line promptly. The original only does this \
+when stdout is a terminal or under ATF; the bytes written are identical.
+- Parity is also checked by the original's own test suite: Apple text_cmds-199 \
+uniq/tests/uniq_test.sh (FreeBSD's, Klara 2024) is vendored verbatim in tests/upstream/ \
+and run by tests/upstream.rs through a small ATF shim, against both /usr/bin/uniq (to \
+validate the shim, macOS only) and runiq (invoked through a symlink named uniq).
+- Performance target: at least as fast as the original and no more memory (peak footprint) \
+on large inputs; streaming with constant memory (one buffer plus the previous line)."""
+help_flags = ["--help"]
+version_flags = ["--version"]
+error_style = "plain"
+
+[project]
+targets = [
+  "x86_64-unknown-linux-musl",
+  "aarch64-unknown-linux-musl",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+]
+
+[kit]
+config = false      # --config, config file, `config show/path`, exit code 3
+self_update = false # `self-update` from GitHub Releases, exit codes 5-6
+json = false        # global --json and JSON errors on stderr
+color = false       # --color (automatic color and NO_COLOR work without it)
+prompts = false     # confirmation prompts, --no-input, exit code 4
+verbosity = false   # -v/-q (logging and RUST_LOG work without it)
+
+# Exit codes 0 (ok), 1 (error, including invalid usage) are what runiq returns.
+# 2 (usage) is cli-maker's built-in and is never produced (see [cli].notes).
+
+[[env]]
+name = "LC_ALL"
+description = "Locale for comparisons; overrides LC_CTYPE and LANG (UTF-8 or C)"
+
+[[env]]
+name = "LC_CTYPE"
+description = "Character encoding and classes used by -i, -f and -s"
+
+[[env]]
+name = "LANG"
+description = "Default locale when LC_ALL and LC_CTYPE are unset"
+
+[[env]]
+name = "RUST_LOG"
+description = "Override log filtering (e.g. debug, runiq=trace)"
+
+# ---------------------------------------------------------------------------
+# Operands
+# ---------------------------------------------------------------------------
+
+[[arg]]
+id = "input"
+value_name = "INPUT"
+help = "File to read; - or absent reads standard input"
+required = false
+
+[[arg]]
+id = "output"
+value_name = "OUTPUT"
+help = "File to write (created or truncated); absent writes standard output"
+required = false
+
+# ---------------------------------------------------------------------------
+# Options
+# ---------------------------------------------------------------------------
+
+[[flag]]
+id = "count"
+long = "count"
+short = "c"
+kind = "switch"
+help = "Precede each output line with the number of times it occurred and a space"
+
+[[flag]]
+id = "repeated"
+long = "repeated"
+short = "d"
+kind = "switch"
+help = "Output one copy of each repeated line; ignored with -D"
+
+[[flag]]
+id = "all_repeated"
+long = "all-repeated"
+short = "D"
+kind = "value"
+value_name = "SEPTYPE"
+possible_values = ["none", "prepend", "separate"]
+default_missing = "none"
+help = "Output every copy of each repeated line; SEPTYPE (attached: -Dprepend, --all-repeated=separate) adds a blank line before (prepend) or after (separate) each group [default: none]"
+
+[[flag]]
+id = "skip_fields"
+long = "skip-fields"
+short = "f"
+kind = "value"
+value_name = "NUM"
+help = "Ignore the first NUM fields (blank-separated) when comparing"
+
+[[flag]]
+id = "ignore_case"
+long = "ignore-case"
+short = "i"
+kind = "switch"
+help = "Compare lines case-insensitively"
+
+[[flag]]
+id = "skip_chars"
+long = "skip-chars"
+short = "s"
+kind = "value"
+value_name = "CHARS"
+help = "Ignore the first CHARS characters when comparing (after any skipped fields)"
+
+[[flag]]
+id = "unique"
+long = "unique"
+short = "u"
+kind = "switch"
+help = "Only output lines that are not repeated"
+
+# ---------------------------------------------------------------------------
+# Behavior cases: executable examples, run by tests/cases.rs. Expected output
+# is inline (`stdout`) or in tests/cases/<stdout_file>. Recorded from
+# /usr/bin/uniq with record_cases.py; stderr fragments written by hand (they
+# omit the program-name prefix, which differs).
+# ---------------------------------------------------------------------------
+
+[[case]]
+name = "adjacent-only"
+args = []
+stdin = "a\na\nb\na\na\na\n"
+notes = "Only adjacent duplicates collapse"
+stdout = "a\nb\na\n"
+exit_code = 0
+
+[[case]]
+name = "count"
+args = ["-c"]
+stdin = "a\na\nb\nc\nc\nc\n"
+stdout = "   2 a\n   1 b\n   3 c\n"
+exit_code = 0
+
+[[case]]
+name = "repeated"
+args = ["-d"]
+stdin = "a\na\nb\nc\nc\nc\nd\n"
+stdout = "a\nc\n"
+exit_code = 0
+
+[[case]]
+name = "unique"
+args = ["-u"]
+stdin = "a\na\nb\nc\nc\nc\nd\n"
+stdout = "b\nd\n"
+exit_code = 0
+
+[[case]]
+name = "count-repeated"
+args = ["-cd"]
+stdin = "a\na\nb\nc\nc\nc\nd\n"
+stdout = "   2 a\n   3 c\n"
+exit_code = 0
+
+[[case]]
+name = "count-unique"
+args = ["--count", "--unique"]
+stdin = "a\na\nb\nc\nc\nc\nd\n"
+stdout = "   1 b\n   1 d\n"
+exit_code = 0
+
+[[case]]
+name = "repeated-and-unique"
+args = ["-d", "-u"]
+stdin = "a\na\nb\nc\nc\nc\nd\n"
+notes = "Quirk: -d without -c prints on the first repeat, so -u cannot suppress it"
+stdout = "a\nc\n"
+exit_code = 0
+
+[[case]]
+name = "count-repeated-unique"
+args = ["-cdu"]
+stdin = "a\na\nb\nc\nc\nc\nd\n"
+notes = "With -c, -d and -u cancel out: nothing is printed"
+stdout = ""
+exit_code = 0
+
+[[case]]
+name = "all-repeated"
+args = ["-D"]
+stdin = "a\na\nb\nc\nc\nc\nd\n"
+stdout = "a\na\nc\nc\nc\n"
+exit_code = 0
+
+[[case]]
+name = "all-repeated-prepend"
+args = ["-Dprepend"]
+stdin = "a\na\nb\nc\nc\nc\nd\n"
+stdout = "\na\na\n\nc\nc\nc\n"
+exit_code = 0
+
+[[case]]
+name = "all-repeated-separate"
+args = ["--all-repeated=separate"]
+stdin = "a\na\nb\nc\nc\nc\n"
+notes = "No separator after the last group"
+stdout = "a\na\n\nc\nc\nc\n"
+exit_code = 0
+
+[[case]]
+name = "all-repeated-septype-case"
+args = ["-DSEPARATE"]
+stdin = "a\na\nb\nb\n"
+stdout = "a\na\n\nb\nb\n"
+exit_code = 0
+
+[[case]]
+name = "all-repeated-overrides-repeated"
+args = ["-d", "-D"]
+stdin = "a\na\nb\n"
+stdout = "a\na\n"
+exit_code = 0
+
+[[case]]
+name = "count-all-repeated"
+args = ["-c", "-D"]
+stdin = "a\na\nb\nc\nc\nc\n"
+notes = "Quirk: each copy is numbered by its position in the group"
+stdout = "   1 a\n   2 a\n   1 c\n   2 c\n   3 c\n"
+exit_code = 0
+
+[[case]]
+name = "unique-all-repeated"
+args = ["-u", "-D"]
+stdin = "a\na\nb\nc\nc\nc\n"
+stdout = "a\na\nc\nc\nc\n"
+exit_code = 0
+
+[[case]]
+name = "all-repeated-separate-word-is-operand"
+args = ["--all-repeated", "prepend"]
+stdin = "a\na\n"
+exit_code = 1
+stderr_contains = "prepend: No such file or directory"
+notes = "--all-repeated takes a value only with =; a separate word is the INPUT operand"
+
+[[case]]
+name = "ignore-case"
+args = ["-i", "-c"]
+stdin = "Apple\napple\nAPPLE\nbanana\n"
+stdout = "   3 Apple\n   1 banana\n"
+exit_code = 0
+
+[[case]]
+name = "ignore-case-unicode"
+args = ["-ic"]
+stdin = "Éclair\néclair\nİ\ni\n"
+env = { LC_ALL = "en_US.UTF-8" }
+stdout = "   2 Éclair\n   2 İ\n"
+exit_code = 0
+
+[[case]]
+name = "ignore-case-c-locale"
+args = ["-ic"]
+stdin = "Éclair\néclair\n"
+env = { LC_ALL = "C" }
+notes = "In the C locale only ASCII letters fold"
+stdout = "   1 Éclair\n   1 éclair\n"
+exit_code = 0
+
+[[case]]
+name = "skip-fields"
+args = ["-f", "1", "-c"]
+stdin = "1 apple\n2 apple\n3 pear\n"
+stdout = "   2 1 apple\n   1 3 pear\n"
+exit_code = 0
+
+[[case]]
+name = "skip-fields-blank-runs"
+args = ["-f1", "-c"]
+stdin = " \tx  same\ny  same\nz same\n"
+notes = "Leading blanks belong to the skipped field; blanks after it are compared"
+stdout = "   2  \tx  same\n   1 z same\n"
+exit_code = 0
+
+[[case]]
+name = "skip-fields-more-than-present"
+args = ["--skip-fields=5", "-c"]
+stdin = "a b\nc d\n"
+stdout = "   2 a b\n"
+exit_code = 0
+
+[[case]]
+name = "skip-chars"
+args = ["-s", "1", "-c"]
+stdin = "madrid\nMadrid\nLisbon\n"
+stdout = "   2 madrid\n   1 Lisbon\n"
+exit_code = 0
+
+[[case]]
+name = "skip-fields-then-chars"
+args = ["-f", "1", "-s", "2", "-c"]
+stdin = "1 xxapple\n2 yyapple\n3 zzpear\n"
+stdout = "   1 1 xxapple\n   1 2 yyapple\n   1 3 zzpear\n"
+exit_code = 0
+
+[[case]]
+name = "skip-chars-counts-characters"
+args = ["-s1", "-c"]
+stdin = "éx\nax\n"
+env = { LC_ALL = "en_US.UTF-8" }
+stdout = "   2 éx\n"
+exit_code = 0
+
+[[case]]
+name = "skip-chars-c-locale-counts-bytes"
+args = ["-s1", "-c"]
+stdin = "éx\nax\n"
+env = { LC_ALL = "C" }
+stdout = "   1 éx\n   1 ax\n"
+exit_code = 0
+
+[[case]]
+name = "skip-fields-unicode-blank"
+args = ["-f1", "-c"]
+stdin = "a x\nb x\n"
+env = { LC_ALL = "en_US.UTF-8" }
+notes = "NO-BREAK SPACE is a blank in UTF-8 locales"
+stdout = "   2 a x\n"
+exit_code = 0
+
+[[case]]
+name = "obsolete-fields"
+args = ["-1", "-c"]
+stdin = "a b\nc b\n"
+stdout = "   2 a b\n"
+exit_code = 0
+
+[[case]]
+name = "obsolete-chars"
+args = ["+1", "-c"]
+stdin = "ab\ncb\n"
+stdout = "   2 ab\n"
+exit_code = 0
+
+[[case]]
+name = "obsolete-rewrites-option-values"
+args = ["-f", "-1"]
+stdin = "x\n"
+exit_code = 1
+stderr_contains = "field skip value is invalid: -f1"
+
+[[case]]
+name = "last-line-without-newline"
+args = []
+stdin = "a\nb"
+stdout = "a\nb"
+exit_code = 0
+
+[[case]]
+name = "last-line-without-newline-merges"
+args = ["-c"]
+stdin = "a\na"
+stdout = "   2 a\n"
+exit_code = 0
+
+[[case]]
+name = "nul-truncates-line"
+args = []
+stdin = "a\u0000b\nc\nc\u0000d\n"
+notes = "Quirk: lines are C strings; output stops at the NUL (dropping the newline) and comparison ignores the rest"
+stdout = "ac\n"
+exit_code = 0
+
+[[case]]
+name = "empty-lines"
+args = ["-c"]
+stdin = "\n\nx\n"
+stdout = "   2 \n   1 x\n"
+exit_code = 0
+
+[[case]]
+name = "empty-input"
+args = ["-c"]
+stdin = ""
+stdout = ""
+exit_code = 0
+
+[[case]]
+name = "input-file"
+args = ["in.txt"]
+files = { "in.txt" = "x\nx\ny\n" }
+stdout = "x\ny\n"
+exit_code = 0
+
+[[case]]
+name = "dash-reads-stdin"
+args = ["-c", "-"]
+stdin = "x\nx\n"
+stdout = "   2 x\n"
+exit_code = 0
+
+[[case]]
+name = "output-file"
+args = ["in.txt", "out.txt"]
+files = { "in.txt" = "x\nx\ny\n" }
+notes = "Output goes to out.txt; stdout stays empty"
+stdout = ""
+exit_code = 0
+
+[[case]]
+name = "options-stop-at-first-operand"
+args = ["in.txt", "-c"]
+files = { "in.txt" = "x\nx\n" }
+notes = "-c after an operand is the OUTPUT file name"
+stdout = ""
+exit_code = 0
+
+[[case]]
+name = "double-dash"
+args = ["--", "-c"]
+exit_code = 1
+stderr_contains = "-c: No such file or directory"
+
+[[case]]
+name = "long-option-abbreviation"
+args = ["--cou", "--uniq"]
+stdin = "a\na\nb\n"
+stdout = "   1 b\n"
+exit_code = 0
+
+[[case]]
+name = "missing-input-file"
+args = ["nofile"]
+exit_code = 1
+stderr_contains = "nofile: No such file or directory"
+
+[[case]]
+name = "input-is-directory"
+args = ["."]
+exit_code = 1
+stderr_contains = ".: Is a directory"
+
+[[case]]
+name = "unwritable-output"
+args = ["in.txt", "no/such/dir/out.txt"]
+files = { "in.txt" = "x\n" }
+exit_code = 1
+stderr_contains = "no/such/dir/out.txt: No such file or directory"
+
+[[case]]
+name = "invalid-option"
+args = ["-x"]
+exit_code = 1
+stderr_contains = "invalid option -- x\nusage: "
+
+[[case]]
+name = "unrecognized-long-option"
+args = ["--nope"]
+exit_code = 1
+stderr_contains = "unrecognized option `--nope'"
+
+[[case]]
+name = "ambiguous-long-option"
+args = ["--skip", "1"]
+exit_code = 1
+stderr_contains = "option `--skip' is ambiguous"
+
+[[case]]
+name = "long-option-missing-value"
+args = ["--skip-fields"]
+exit_code = 1
+stderr_contains = "option `--skip-fields' requires an argument"
+
+[[case]]
+name = "short-option-missing-value"
+args = ["-s"]
+exit_code = 1
+stderr_contains = "option requires an argument -- s"
+
+[[case]]
+name = "switch-given-value"
+args = ["--count=3"]
+exit_code = 1
+stderr_contains = "option `--count' doesn't allow an argument"
+
+[[case]]
+name = "bad-septype"
+args = ["-Dp"]
+exit_code = 1
+stderr_contains = "usage: "
+
+[[case]]
+name = "too-many-operands"
+args = ["a", "b", "c"]
+exit_code = 1
+stderr_contains = "usage: "
+
+[[case]]
+name = "skip-fields-not-a-number"
+args = ["-f", "abc"]
+exit_code = 1
+stderr_contains = "field skip value is invalid: abc"
+
+[[case]]
+name = "skip-chars-too-large"
+args = ["-s", "2147483648"]
+exit_code = 1
+stderr_contains = "character skip value is too large: 2147483648"
+
+[[case]]
+name = "skip-fields-too-small"
+args = ["-f", " -5"]
+exit_code = 1
+stderr_contains = "field skip value is too small:  -5"
+
+[[case]]
+name = "skip-value-leading-blank-ok"
+args = ["-f", " 1", "-c"]
+stdin = "1 a\n2 a\n"
+stdout = "   2 1 a\n"
+exit_code = 0
