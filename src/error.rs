@@ -19,6 +19,12 @@ pub enum AppError {
     #[diagnostic(code(usage))]
     Usage(String),
 
+    /// A BSD-style usage error: an optional getopt diagnostic, then the usage
+    /// line. Exits 1 like macOS uniq (see `[cli].notes`).
+    #[error("{}", .0.as_deref().unwrap_or(""))]
+    #[diagnostic(code(error))]
+    BsdUsage(Option<String>),
+
     #[error("I/O error: {0}")]
     #[diagnostic(code(error))]
     Io(#[from] std::io::Error),
@@ -33,7 +39,7 @@ impl AppError {
     pub fn code(&self) -> &'static str {
         match self {
             AppError::Usage(_) => "usage",
-            AppError::Io(_) | AppError::Other(_) => "error",
+            AppError::Io(_) | AppError::Other(_) | AppError::BsdUsage(_) => "error",
         }
     }
 
@@ -92,12 +98,38 @@ impl<'a> JsonError<'a> {
 pub fn render_human(err: &AppError, color: bool) -> String {
     match generated::ERROR_STYLE {
         ErrorStyle::Rich => render_rich(err, color),
-        ErrorStyle::Plain => render_plain(err, generated::NAME),
+        ErrorStyle::Plain => render_plain(err, progname()),
     }
 }
 
-/// `<name>: <message>`, then `<name>: hint: <hint>` when there is one.
+/// The program name for messages: the basename of argv\[0\], as BSD
+/// getprogname(3) reports it (a symlink named `uniq` prints `uniq: ...`).
+static PROGNAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Record argv\[0\]. Later calls are ignored.
+pub fn set_progname(argv0: &std::ffi::OsStr) {
+    let path = std::path::Path::new(argv0);
+    if let Some(name) = path.file_name() {
+        let _ = PROGNAME.set(name.to_string_lossy().into_owned());
+    }
+}
+
+/// The recorded program name, or the CLI's name before argv\[0\] is known.
+pub fn progname() -> &'static str {
+    PROGNAME.get().map_or(generated::NAME, String::as_str)
+}
+
+/// `<name>: <message>`, then `<name>: hint: <hint>` when there is one. A BSD
+/// usage error is its diagnostic (if any) followed by the usage line.
 pub fn render_plain(err: &AppError, name: &str) -> String {
+    if let AppError::BsdUsage(message) = err {
+        let usage =
+            format!("usage: {name} [-cdiu] [-D[septype]] [-f fields] [-s chars] [input [output]]");
+        return match message {
+            Some(m) => format!("{name}: {m}\n{usage}"),
+            None => usage,
+        };
+    }
     match err.hint() {
         Some(hint) => format!("{name}: {err}\n{name}: hint: {hint}"),
         None => format!("{name}: {err}"),

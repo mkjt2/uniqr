@@ -7,6 +7,8 @@ pub mod ctx;
 pub mod engine;
 pub mod error;
 pub mod generated;
+pub mod getopt;
+pub mod locale;
 pub mod logging;
 
 use clap::FromArgMatches;
@@ -39,6 +41,20 @@ pub fn run(args: Vec<OsString>, io: Io) -> i32 {
         let result = commands::generate::run(io.out, &what.to_string_lossy());
         return finish(result, false, false, io.err);
     }
+
+    if let Some(argv0) = args.first() {
+        error::set_progname(argv0);
+    }
+    // BSD getopt_long semantics first; clap then sees a canonical argv.
+    let args = match getopt::normalize(&args, (io.env)("POSIXLY_CORRECT").is_some()) {
+        Ok(args) => args,
+        Err(getopt::ArgError::Usage(m)) => {
+            return finish(Err(AppError::BsdUsage(m)), false, false, io.err);
+        }
+        Err(getopt::ArgError::Fatal(m)) => {
+            return finish(Err(AppError::Other(m)), false, false, io.err);
+        }
+    };
 
     let matches = match cli::command().try_get_matches_from(args) {
         Ok(m) => m,
@@ -81,7 +97,7 @@ pub fn report(err: &AppError, json: bool, color: bool, out: &mut dyn Write) -> i
     if matches!(err, AppError::Io(e) if e.kind() == ErrorKind::BrokenPipe) {
         return 0;
     }
-    if !json && err.to_string().is_empty() {
+    if !json && err.to_string().is_empty() && !matches!(err, AppError::BsdUsage(_)) {
         return err.exit_code();
     }
     let text = if json {
@@ -89,7 +105,8 @@ pub fn report(err: &AppError, json: bool, color: bool, out: &mut dyn Write) -> i
     } else {
         error::render_human(err, color)
     };
-    let _ = writeln!(out, "{}", text.trim_end());
+    // Only newlines: a message can end in meaningful blanks ("invalid: ").
+    let _ = writeln!(out, "{}", text.trim_end_matches('\n'));
     err.exit_code()
 }
 

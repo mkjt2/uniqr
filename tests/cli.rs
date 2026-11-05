@@ -30,10 +30,11 @@ fn version_goes_to_stdout() {
 fn usage_errors_are_not_colored_without_a_tty() {
     let home = tempfile::tempdir().unwrap();
     // Parse errors happen before --color is known, so they follow NO_COLOR/TTY.
+    // runiq: BSD usage errors exit 1, like macOS uniq (see cli.toml notes).
     cmd(home.path())
         .arg("--definitely-not-a-flag")
         .assert()
-        .code(2)
+        .code(1)
         .stderr(predicate::str::contains("\u{1b}[").not());
 }
 

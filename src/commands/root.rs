@@ -5,6 +5,7 @@ use crate::cli::{Cli, Septype};
 use crate::ctx::Ctx;
 use crate::engine::{self, AllRepeated, Bytes, Failure, Mode};
 use crate::error::{AppError, errno_message};
+use crate::locale::{self, Charset, KeySpec, SingleByteKeys, Utf8Keys, WideKeys};
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -45,7 +46,31 @@ pub fn run(ctx: &mut Ctx, cli: &Cli) -> Result<(), AppError> {
         None => ctx.out,
     };
 
-    engine::run(&Bytes, mode, input, out).map_err(|f| match f {
+    let spec = KeySpec {
+        fields: u64::from(cli.skip_fields.unwrap_or(0)),
+        chars: u64::from(cli.skip_chars.unwrap_or(0)),
+        fold: cli.ignore_case,
+    };
+    // setlocale(LC_ALL, ""), as the original does.
+    let loc = locale::detect();
+    let result = if spec.is_plain() && !loc.collates {
+        // wcscoll is wcscmp: equality is byte equality in every encoding.
+        engine::run(&Bytes, mode, input, out)
+    } else {
+        match loc.charset {
+            Charset::Utf8(a) => {
+                engine::run(&Utf8Keys::new(spec, a, loc.collates), mode, input, out)
+            }
+            Charset::Single(t) => engine::run(
+                &SingleByteKeys::new(spec, t, loc.collates),
+                mode,
+                input,
+                out,
+            ),
+            Charset::Wide => engine::run(&WideKeys::new(spec, loc.collates), mode, input, out),
+        }
+    };
+    result.map_err(|f| match f {
         Failure::Read(e) => path_error(in_name, &e),
         Failure::Write(e) => path_error(out_name, &e),
     })

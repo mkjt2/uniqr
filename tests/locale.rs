@@ -1,0 +1,131 @@
+//! Increment 3: locale-aware comparison keys for -f, -s and -i.
+//!
+//! The table in `data/locale_cases.rs` was recorded from macOS /usr/bin/uniq by
+//! `scripts/record_locale_cases.py` (byte-exact, including invalid UTF-8 and
+//! legacy encodings that cli.toml cases cannot hold). Cases marked
+//! non-portable depend on macOS libc tables or locales and only run there.
+
+mod common;
+#[path = "data/locale_cases.rs"]
+mod locale_cases;
+
+fn render(b: &[u8]) -> String {
+    String::from_utf8_lossy(b).escape_debug().to_string()
+}
+
+#[test]
+fn recorded_locale_cases() {
+    let mut failures = Vec::new();
+    for &(name, locale, args, stdin, want, code, portable) in locale_cases::CASES {
+        if !portable && !cfg!(target_os = "macos") {
+            continue;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let out = common::cmd(dir.path())
+            .env_remove("LANG")
+            .env_remove("LC_CTYPE")
+            .env_remove("LC_COLLATE")
+            .env("LC_ALL", locale)
+            .args(args)
+            .write_stdin(stdin.to_vec())
+            .output()
+            .unwrap();
+        if out.stdout != want || out.status.code() != Some(code) {
+            failures.push(format!(
+                "{name} (LC_ALL={locale} {args:?}): got {:?} \"{}\", want {code} \"{}\"",
+                out.status.code(),
+                render(&out.stdout),
+                render(want)
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn locale_categories_resolve_like_setlocale() {
+    let run = |env: &[(&str, &str)]| {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = common::cmd(dir.path());
+        for k in ["LC_ALL", "LC_CTYPE", "LC_COLLATE", "LANG"] {
+            c.env_remove(k);
+        }
+        for (k, v) in env {
+            c.env(k, v);
+        }
+        let out = c.arg("-ic").write_stdin("É\né\n").output().unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let folded = "   2 É\n";
+    let unfolded = "   1 É\n   1 é\n";
+    assert_eq!(run(&[("LANG", "en_US.UTF-8")]), folded);
+    assert_eq!(run(&[("LANG", "C"), ("LC_CTYPE", "en_US.UTF-8")]), folded);
+    assert_eq!(run(&[("LANG", "en_US.UTF-8"), ("LC_ALL", "C")]), unfolded);
+    assert_eq!(run(&[]), unfolded);
+}
+
+/// Collation follows LC_COLLATE, decoding follows LC_CTYPE (macOS values).
+#[cfg(target_os = "macos")]
+#[test]
+fn collation_and_ctype_are_separate_categories() {
+    let run = |env: &[(&str, &str)]| {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = common::cmd(dir.path());
+        for k in ["LC_ALL", "LC_CTYPE", "LC_COLLATE", "LANG", "PATH_LOCALE"] {
+            c.env_remove(k);
+        }
+        for (k, v) in env {
+            c.env(k, v);
+        }
+        let out = c.arg("-c").write_stdin("ж\nя\n").output().unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let merged = "   2 ж\n";
+    let apart = "   1 ж\n   1 я\n";
+    assert_eq!(run(&[("LANG", "en_US.UTF-8")]), merged);
+    assert_eq!(run(&[("LANG", "en_US.UTF-8"), ("LC_COLLATE", "C")]), apart);
+    assert_eq!(
+        run(&[("LC_CTYPE", "C"), ("LC_COLLATE", "en_US.UTF-8")]),
+        apart
+    );
+    // macOS libc ignores $PATH_LOCALE (so does the original).
+    let empty = tempfile::tempdir().unwrap();
+    let path = empty.path().to_str().unwrap();
+    assert_eq!(
+        run(&[("LANG", "en_US.UTF-8"), ("PATH_LOCALE", path)]),
+        merged
+    );
+}
+
+#[test]
+fn ascii_options_without_locale() {
+    let run = |args: &[&str], stdin: &str| {
+        let dir = tempfile::tempdir().unwrap();
+        let out = common::cmd(dir.path())
+            .env("LC_ALL", "C")
+            .args(args)
+            .write_stdin(stdin)
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    };
+    assert_eq!(run(&["-i"], "a\nA\nb\nB\na\nA\n"), "a\nb\na\n");
+    assert_eq!(run(&["-f", "1"], "1\ta\n2\ta\n3\tb\n"), "1\ta\n3\tb\n");
+    assert_eq!(
+        run(&["-f", "2", "-c"], "  a b x\n c\td x\n"),
+        "   2   a b x\n"
+    );
+    assert_eq!(run(&["-f", "1", "-c"], "   \n \t\n"), "   2    \n");
+    assert_eq!(run(&["-s", "2"], "1 a\n2 a\n3 b\n"), "1 a\n3 b\n");
+    assert_eq!(run(&["-s", "9", "-c"], "abc\nxyz\n"), "   2 abc\n");
+    assert_eq!(
+        run(&["-f", "0", "-s", "0", "-c"], "a\nb\n"),
+        "   1 a\n   1 b\n"
+    );
+    assert_eq!(run(&["-ic"], "A\0x\na\0y\n"), "   2 A");
+    assert_eq!(run(&["-ic"], "Ab\naB"), "   2 Ab\n");
+    assert_eq!(
+        run(&["-ic", "-f1"], "x AB\ny ab\nz abc\n"),
+        "   2 x AB\n   1 z abc\n"
+    );
+}
